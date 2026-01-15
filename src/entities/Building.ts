@@ -563,7 +563,9 @@ export const createBuilding = (options: BuildingOptions, textures: BuildingTextu
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = textColor;
-      ctx.font = "bold 64px Arial";
+      // Если текст длинный, уменьшаем шрифт
+      const fontSize = text.length > 12 ? 36 : 64;
+      ctx.font = `bold ${fontSize}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       // Читаемость: лёгкая тень, чтобы текст было видно на любом фоне.

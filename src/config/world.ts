@@ -60,7 +60,7 @@ export const WORLD_CONFIG = {
       color: "#e30611",
       roof: "#2980b9",
       rotation: Math.PI, // фасад/вход к дороге (чтобы тропинка не шла в стену)
-      label: "МТС БАНК"
+      label: "Вам доступна скидка..."
     },
     {
       position: { x: 40, z: 92 },
