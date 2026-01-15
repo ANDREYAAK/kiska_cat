@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-type TextureKind = "grass" | "sand" | "path" | "roof" | "wall" | "windows" | "road" | "clouds";
+type TextureKind = "grass" | "sand" | "path" | "roof" | "wall" | "windows" | "road" | "clouds" | "tile";
 
 export const createProceduralTexture = (kind: TextureKind, colorHex: string) => {
   // Чуть выше разрешение — меньше “пикселения” на фасадах/окнах
@@ -157,6 +157,24 @@ export const createProceduralTexture = (kind: TextureKind, colorHex: string) => 
 
     // Чуть-чуть шума, чтобы стекло не было пластиком
     addNoise(10);
+  }
+
+  if (kind === "tile") {
+    // Paving stones / Tiles
+    ctx.fillStyle = colorHex;
+    ctx.fillRect(0, 0, size, size);
+    addNoise(15);
+
+    // Grid
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 3;
+    const tiles = 4;
+    const step = size / tiles;
+    for (let i = 0; i <= tiles; i++) {
+      const p = i * step;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
+    }
   }
 
   if (kind === "clouds") {

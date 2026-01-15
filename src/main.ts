@@ -7,6 +7,7 @@ import { World } from "@world/World";
 import { Player } from "@entities/Player";
 import { BUILDING_LAYOUT } from "@entities/Building";
 import { Hud } from "@ui/Hud";
+import { AudioManager } from "@core/AudioManager"; // Added
 import { GAME_CONFIG } from "@config/game";
 import { WORLD_CONFIG } from "@config/world";
 
@@ -17,10 +18,23 @@ if (!container) {
 
 const engine = new Engine(container);
 const hud = new Hud(container);
-const input = new Input(hud.element);
+const input = new Input(hud.element); // Hud must be initialized
 const world = new World();
 const player = new Player();
 const promoDismissedByLabel: Record<string, boolean> = {};
+
+// Audio
+const audioManager = new AudioManager("/sounds/music.mp3", 0.4);
+hud.onMusicToggle(() => {
+  const enabled = audioManager.toggle();
+  hud.setMusicIcon(enabled);
+});
+// Try to start music on first interaction (if enabled)
+const startMusic = () => {
+  if (audioManager.isEnabled()) audioManager.play();
+};
+document.addEventListener("click", startMusic, { once: true });
+document.addEventListener("keydown", startMusic, { once: true });
 let activePromoLabel: string | null = null;
 let shownPromoLabel: string | null = null;
 let selectedParkedCar: THREE.Object3D | null = null;

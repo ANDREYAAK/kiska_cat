@@ -8,7 +8,7 @@ export class Hud {
   private readonly minimapCtx: CanvasRenderingContext2D;
   private readonly toastEl: HTMLDivElement;
   private readonly promoEl: HTMLDivElement;
-  private readonly promoTextEl: HTMLDivElement;
+  // private promoTextEl: HTMLDivElement;
   private toastTimer: number | null = null;
   private staticCanvas: HTMLCanvasElement | null = null;
   private staticCtx: CanvasRenderingContext2D | null = null;
@@ -17,6 +17,7 @@ export class Hud {
   private lastCanvasW = 0;
   private lastCanvasH = 0;
   private promoCloseHandler: (() => void) | null = null;
+  private onMusicToggleHandler: (() => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.element = document.createElement("div");
@@ -27,6 +28,7 @@ export class Hud {
       </div>
       <div class="ui-buttons">
         <button class="ui-button" type="button" data-action="toggle-help">≡</button>
+        <button class="ui-button" type="button" data-action="toggle-music">🎵</button>
       </div>
       <div class="ui-toast" data-role="toast" aria-live="polite" hidden></div>
       <div class="ui-modal" data-role="promo" hidden>
@@ -57,7 +59,7 @@ export class Hud {
     this.minimapCanvas = canvas;
     this.minimapCtx = ctx;
     this.promoEl = promo;
-    this.promoTextEl = promoText;
+    // this.promoTextEl = promoText;
 
     // Кнопки
     // Клик по миникарте открывает большую карту
@@ -65,6 +67,10 @@ export class Hud {
     // Кнопка помощи
     const helpBtn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-help"]');
     helpBtn?.addEventListener("click", () => this.toggleHelp());
+
+    // Кнопка музыки
+    const musicBtn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-music"]');
+    musicBtn?.addEventListener("click", () => this.onMusicToggleHandler?.());
 
     // Закрытие всплывающего сообщения по клику/тапу
     this.toastEl.addEventListener("click", () => this.hideMessage());
@@ -146,6 +152,15 @@ export class Hud {
 
   onPromoClosed(handler: () => void) {
     this.promoCloseHandler = handler;
+  }
+
+  onMusicToggle(handler: () => void) {
+    this.onMusicToggleHandler = handler;
+  }
+
+  setMusicIcon(enabled: boolean) {
+    const btn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-music"]');
+    if (btn) btn.textContent = enabled ? "🎵" : "🔇";
   }
 
   private toggleMap() {

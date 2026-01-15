@@ -74,15 +74,16 @@ export class World implements Updatable {
   private readonly groundTexture = createProceduralTexture("grass", GAME_CONFIG.groundColor);
   private readonly sandTexture = createProceduralTexture("sand", GAME_CONFIG.sandColor);
   private readonly roadTexture = createProceduralTexture("road", "#555a60");
-  private readonly pathTexture = createProceduralTexture("path", GAME_CONFIG.pathColor);
+
+  private readonly tileTexture = createProceduralTexture("tile", "#e0e0e0");
   private readonly cloudTexture = createProceduralTexture("clouds", "rgba(0,0,0,0)");
-  private readonly laneLineMaterial = new THREE.MeshStandardMaterial({ color: "#f5f8ff", roughness: 0.35 });
+  private readonly buildingPaths: Array<{ p1: THREE.Vector2; p2: THREE.Vector2; width: number }> = [];
+
   private readonly centerLineMaterial = new THREE.MeshStandardMaterial({
-    color: "#f7f9fc",
-    roughness: 0.35,
-    metalness: 0.02,
-    emissive: "#dfe6ef",
-    emissiveIntensity: 0.05
+    color: "#ffffff",
+    roughness: 0.4,
+    metalness: 0.1,
+    side: THREE.FrontSide // Ensure visibility
   });
 
   private readonly colliders: Collider[] = [];
@@ -152,25 +153,31 @@ export class World implements Updatable {
     return tH;
   }
 
+  private readonly riverWidth = 18;
+
   // --- River curve function ---
   // Returns the central Z of the river for a given X.
   private getRiverCenterZ(x: number): number {
-    // Sinuosity: Z ≈ -40, but waves.
-    // Amp = 20, Freq = 0.03
-    return -40 + 20 * Math.sin(x * 0.02 + 1.0);
+    // River moved to Z=160 (North of all buildings) to avoid city flooding.
+    // Oscillates slightly for visual interest.
+    return 160 + 10 * Math.sin(x * 0.05);
   }
 
   private getTerrainHeight(x: number, z: number): number {
+    // FIX: Flatten terrain near buildings and parking to prevent floating/sinking.
+    if (this.isPointNearBuilding(x, z, 6.0) || this.isPointInParking(x, z, 4.0)) {
+      return 0;
+    }
+
     let h = 0;
 
     // 1) River (Curved)
     const riverZ = this.getRiverCenterZ(x);
-    const riverW = 14;
     const riverDist = Math.abs(z - riverZ);
 
-    if (riverDist < riverW) {
-      const k = riverDist / riverW;
-      const depth = 6.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
+    if (riverDist < this.riverWidth) {
+      const k = riverDist / this.riverWidth;
+      const depth = 5.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
       h -= depth;
     }
 
@@ -190,8 +197,7 @@ export class World implements Updatable {
 
   private isPointInRiver(x: number, z: number, margin = 0): boolean {
     const riverZ = this.getRiverCenterZ(x);
-    const riverW = 14;
-    return Math.abs(z - riverZ) < (riverW - 2 + margin); // -2 accounts for shore
+    return Math.abs(z - riverZ) < (this.riverWidth - 2 + margin);
   }
 
 
@@ -200,17 +206,16 @@ export class World implements Updatable {
     this.roofTexture.repeat.set(2, 2);
     this.windowTexture.repeat.set(1, 1);
     this.parkingLayouts = this.computeParkingLayouts();
+    this.intersections = this.computeIntersections();
+
     this.buildSky();
+    // Removed duplicate calls
     this.buildHills();
     this.buildGround();
     this.buildParks();
     this.buildBeach();
     this.buildWater();
-    this.buildHills(); // Старые холмы (декорации на горизонте)
-    this.buildGround();
-    this.buildParks();
-    this.buildBeach();
-    this.buildWater();
+
     this.buildRoads(); // Теперь будет учитывать рельеф
     this.buildPathsToBuildings();
     this.buildParkingLots();
@@ -599,7 +604,15 @@ export class World implements Updatable {
       const wx = lx;
       const wz = -ly;
 
-      const h = this.getTerrainHeight(wx, wz);
+      let h = this.getTerrainHeight(wx, wz);
+
+      // FIX: Lower ground under roads to curb clipping, but keep hill shape.
+      // Use wider margin (+1.5) to ensure shoulders are lowered too.
+      if (this.isPointOnRoad(wx, wz, 1.5)) {
+        // Sink the ground by 0.4m relative to its natural height.
+        // This ensures the road (at natural height + 0.04) floats above it.
+        h -= 0.4;
+      }
 
       // Z компонента в PlaneGeometry станет Y (высотой) после поворота.
       // НО смещение вершин работает в локальных осях. В PlaneGeometry "высота" (перпендикуляр) это Z.
@@ -632,15 +645,18 @@ export class World implements Updatable {
       "#c8d6e5",
       "#ffcccc"
     ];
-    const flowerMaterialCache: Record<string, THREE.MeshStandardMaterial> = {};
+
     const radius = GAME_CONFIG.worldSize * 0.5;
-    for (let i = 0; i < 420; i += 1) {
+    // More flowers, different sizes
+    for (let i = 0; i < 1200; i += 1) {
       const angle = Math.random() * Math.PI * 2;
       const dist = Math.random() * radius;
       const x = Math.cos(angle) * dist;
       const z = Math.sin(angle) * dist;
       // Не сажаем цветы на дорогах/вокруг дорог
       if (this.isPointOnRoad(x, z, 1.2)) continue;
+      // Не сажаем на тропинках
+      if (this.isPointOnPath(x, z, 0.5)) continue;
       // Не сажаем цветы на парковках
       if (this.isPointInParking(x, z, 1.4)) continue;
       // И не сажаем цветы под зданиями (чтобы не “торчали” из фундамента).
@@ -650,21 +666,117 @@ export class World implements Updatable {
       if (this.isPointInAreas(x, z, (WORLD_CONFIG as { beachAreas?: any[] }).beachAreas, 0)) continue;
 
       const color = flowerColors[Math.floor(Math.random() * flowerColors.length)];
-      const mat =
-        flowerMaterialCache[color] ??
-        (flowerMaterialCache[color] = new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.6
-        }));
+
       const stem = new THREE.Mesh(
         new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6),
         new THREE.MeshStandardMaterial({ color: "#27ae60" })
       );
       stem.position.set(x, 0.3, z);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), mat);
+
+      // Replaced with createFlowerHead
+      const head = this.createFlowerHead(color);
       head.position.set(x, 0.65, z);
       head.castShadow = true;
       this.group.add(stem, head);
+
+      // Random scale for variety
+      const s = 0.8 + Math.random() * 1.0;
+      stem.scale.set(s, s, s);
+      head.scale.set(s, s, s);
+    }
+
+    // Additional "Big" flowers
+    for (let i = 0; i < 300; i++) {
+      // Copy loop logic but bigger scale
+      // ... Or just rely on the main loop with wider scale range.
+      // Let's just stick to the main loop but make it 1200 and varied.
+    }
+
+    this.buildBushes();
+  }
+
+  private isPointOnPath(x: number, z: number, margin = 0): boolean {
+    for (const p of this.buildingPaths) {
+      // Distance from point to segment p1-p2
+      const l2 = p.p1.distanceToSquared(p.p2);
+      if (l2 === 0) {
+        if (p.p1.distanceTo(new THREE.Vector2(x, z)) < p.width / 2 + margin) return true;
+        continue;
+      }
+      const t = ((x - p.p1.x) * (p.p2.x - p.p1.x) + (z - p.p1.y) * (p.p2.y - p.p1.y)) / l2;
+      const tClamped = Math.max(0, Math.min(1, t));
+      const projX = p.p1.x + tClamped * (p.p2.x - p.p1.x);
+      const projZ = p.p1.y + tClamped * (p.p2.y - p.p1.y);
+      const dist = Math.hypot(x - projX, z - projZ);
+      if (dist < p.width / 2 + margin) return true;
+    }
+    return false;
+  }
+
+  private createFlowerHead(color: string) {
+    // Simple petal flower
+    const group = new THREE.Group();
+    const center = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshStandardMaterial({ color: "#ffff00" }));
+    group.add(center);
+
+    const petalGeo = new THREE.SphereGeometry(0.08, 8, 8);
+    const petalMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2;
+      const petal = new THREE.Mesh(petalGeo, petalMat);
+      petal.position.set(Math.cos(angle) * 0.1, 0, Math.sin(angle) * 0.1);
+      group.add(petal);
+    }
+    return group;
+  }
+
+  private createBushMesh(scale: number) {
+    const group = new THREE.Group();
+    // Tiny trunk
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1 * scale, 0.15 * scale, 0.4 * scale, 6),
+      new THREE.MeshStandardMaterial({ color: "#7a5138", roughness: 1.0 })
+    );
+    trunk.position.y = 0.2 * scale;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // Foliage - "tree style" (stacked spheres)
+    const colors = ["#2ecc71", "#27ae60", "#16a085", "#2ecc71"];
+    const col = colors[Math.floor(Math.random() * colors.length)];
+    const foliageMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 });
+
+    const puffs = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < puffs; i++) {
+      const s = (0.5 + Math.random() * 0.3) * scale;
+      const f = new THREE.Mesh(new THREE.SphereGeometry(s, 7, 7), foliageMat);
+      f.position.set(
+        (Math.random() - 0.5) * 0.3 * scale,
+        (0.4 + i * 0.4) * scale,
+        (Math.random() - 0.5) * 0.3 * scale
+      );
+      f.castShadow = true;
+      group.add(f);
+    }
+    return group;
+  }
+
+  private buildBushes() {
+    for (let i = 0; i < 60; i++) {
+      const r = 20 + Math.random() * 80;
+      const angle = Math.random() * Math.PI * 2;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+
+      if (this.isPointOnRoad(x, z, 2)) continue;
+      if (this.isPointNearBuilding(x, z, 3)) continue;
+      if (this.isPointInRiver(x, z, 2)) continue;
+      if (this.isPointInParking(x, z, 2)) continue;
+
+      const h = this.getWorldHeight(x, z);
+      const bush = this.createBushMesh(1.0 + Math.random() * 0.5);
+      bush.position.set(x, h, z);
+      this.group.add(bush);
     }
   }
 
@@ -760,7 +872,7 @@ export class World implements Updatable {
 
     const dir = (rotY: number) => ({ x: Math.sin(rotY), z: Math.cos(rotY) }); // локальная +Z
 
-    const intersections: Array<{ x: number; z: number; halfSize: number }> = [];
+    const intersections: Array<{ x: number; z: number; halfSize: number; roadWidth: number }> = [];
 
     for (let i = 0; i < roads.length; i += 1) {
       for (let j = i + 1; j < roads.length; j += 1) {
@@ -787,17 +899,20 @@ export class World implements Updatable {
         const inB = Math.abs(bLocal.x) <= b.width / 2 + 0.01 && Math.abs(bLocal.z) <= b.length / 2 + 0.01;
         if (!inA || !inB) continue;
 
-        // Полузона перекрёстка: чуть больше ширины, чтобы вырезать разметку “с запасом”.
-        const halfSize = Math.max(a.width, b.width) / 2 + 1.2;
+        // Полузона перекрёстка: радикально увеличиваем, чтобы убрать разметку наверняка.
+        const roadWidth = Math.max(a.width, b.width);
+        const halfSize = roadWidth / 2 + 7.5; // Exclusion zone radius
 
         // Дедупликация (если вдруг два раза нашли один и тот же перекрёсток).
         const already = intersections.some((it) => Math.hypot(it.x - hit.x, it.z - hit.z) < 0.5);
-        if (!already) intersections.push({ x: hit.x, z: hit.z, halfSize });
+        if (!already) intersections.push({ x: hit.x, z: hit.z, halfSize, roadWidth });
       }
     }
 
     return intersections;
   }
+
+
 
   private buildHills() {
     // Холмы должны выглядеть как земляные насыпи:
@@ -956,8 +1071,8 @@ export class World implements Updatable {
     // We construct a mesh that follows the river path along X.
     const riverLen = 400;
     const segs = 120;
-    const riverWidth = 18;
-    const riverGeo = new THREE.PlaneGeometry(riverLen, riverWidth, segs, 4);
+    // FIX: Match riverWidth with class property
+    const riverGeo = new THREE.PlaneGeometry(riverLen, this.riverWidth, segs, 4);
 
     const pos = riverGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -978,6 +1093,8 @@ export class World implements Updatable {
     }
 
     riverGeo.computeVertexNormals();
+    riverGeo.computeBoundingBox();
+    riverGeo.computeBoundingSphere();
     const river = new THREE.Mesh(riverGeo, waterMat);
     river.rotation.x = -Math.PI / 2;
     river.position.y = -3.8;
@@ -996,8 +1113,8 @@ export class World implements Updatable {
       const geo = new THREE.PlaneGeometry(road.width, road.length, 4, segs);
 
       const pos = geo.attributes.position;
-      const vec = new THREE.Vector3();
-      const worldPos = new THREE.Vector3();
+      // Removed unused vec, worldPos
+
 
       // Нужно трансформировать каждую вершину в мировые, узнать высоту и вернуть локальную Z (которая станет Y).
       // roadGroup имеет позицию и вращение.
@@ -1051,25 +1168,15 @@ export class World implements Updatable {
         // Получаем высоту рельефа
         const tH = this.getTerrainHeight(wx, wz);
 
-        // Логика Моста:
-        // Если это "зона моста", мы НЕ опускаем дорогу.
-        // Зона моста: река около Z=-40.
-        // Дорога: X=-70.
-        // Проверяем: если tH < -1.0 (глубоко), а мы на дороге -> держим высоту 0 (или плавный переход).
-
+        // Logic for Bridge: If terrain drops significantly (river/canyon), keep road flat (at height ~0).
         let finalH = tH;
-        // Простой хак для моста: если земля ушла вниз, дорога остается на 0.
-        // Но только если мы над оврагом.
-        // Земля в овраге < 0.
         if (finalH < -0.5) {
-          // Это мост!
           finalH = 0;
         }
 
-        // Поднимаем чуть над землей
+        // Lift slightly above ground to avoid z-fighting on flat terrain
         finalH += 0.04;
 
-        // Z аттрибут PlaneGeometry станет Y (высотой) после rotation.x = -PI/2
         pos.setZ(i, finalH);
       }
       geo.computeVertexNormals();
@@ -1104,104 +1211,131 @@ export class World implements Updatable {
       // Для холма (высота > 0) разметка останется внутри холма.
       // Временно: строим мост!
 
-      const centerType = (road.center ?? "none") as "double" | "dashed" | "solid" | "none";
-      // this.addCenterLine(roadGroup, centerType, road.length, road); // TODO: Fix height
-
-      if (road.width >= 11) {
-        // ...
-      }
       this.group.add(roadGroup);
 
-      // --- МОСТ: Перила и Опоры ---
-      // Если дорога проходит над оврагом (Z ~ -40), добавим опоры.
-      // Проверяем центр дороги.
-      // Дорога X=-70, Z от -95 до 75. Проходит через Z=-40.
-      const roadCrossesRiver = Math.abs(road.position.x - (-70)) < 1 && Math.abs(road.position.z - (-10)) < 1;
+      // --- MOVED: CenterLine is now uncommented and works correctly with height ---
+      const centerType = (road.center ?? "none") as "double" | "dashed" | "solid" | "none";
+      this.addCenterLine(roadGroup, centerType, road.length, road);
 
-      if (roadCrossesRiver) {
-        // Строим перила и опоры в районе Z=-40 (в локальных координатах дороги).
-        // Road pos: -70, -10. Z=-40 is relative Z = -30.
-        // Road Rotation 0? Проверим конфиг. 
-        // { position: { x: -70, z: -10 }, width: 10, length: 170, center: "dashed" } -> rotation default 0.
-        // Значит Z world = Z local + (-10).
-        // Z world = -40 => Z local = -30.
+      // --- Dynamic Bridge Generation ---
+      // Check along the road for deep terrain (river) and place pillars
+      const step = 8; // Step size for checking
+      // Variables inBridge/bridgeStart were unused
 
-        this.buildBridgeStructure(roadGroup, -30, 24, road.width);
+
+      // We check interval along the road. 
+      // Local Z from -length/2 to length/2
+      for (let z = -road.length / 2; z <= road.length / 2; z += step) {
+        // Convert local road point to world to check terrain
+        // Note: in worldToLocalXZ we used specific math. Let's match it.
+        // worldToLocal: c=cos(-rot), s=sin(-rot).
+        // Reverse: wx = localX*cos(rot) - localZ*sin(rot) ... wait.
+        // Let's use standard rotation.
+        // x' = x*cos - z*sin
+        // z' = x*sin + z*cos
+        // Here road is along Z local? "PlaneGeometry(width, length)". Default Y-axis is length.
+        // We treated Y as localized Z in other places.
+        // Let's stick to the manual transform we used in createSolidLine:
+        // wx = roadX + localX*c + localZ*s
+        // wz = roadZ + (-localX*s + localZ*c)
+        // Here localX = 0 (center of road). localZ = z.
+        const wP_x = road.position.x + 0 * rCos + z * rSin;
+        const wP_z = road.position.z + (-0 * rSin + z * rCos);
+
+        const h = this.getTerrainHeight(wP_x, wP_z);
+        const isDeep = h < -0.5;
+
+        // FIX: Do not build bridges near buildings or parking (prevents clipping artifacts)
+        const nearStuff = this.isPointNearBuilding(wP_x, wP_z, 4) || this.isPointInParking(wP_x, wP_z, 4);
+
+        if (isDeep && !nearStuff) {
+          // Place pillar if we are deep
+          // Maybe not every step, but sparse?
+          // Or detect "Bridge Segments".
+          // Simple approach: Place pillar every X steps if deep.
+          // Also add railings along the deep part.
+
+          // Railings are continuous? Hard to segment. 
+          // Let's just place pillars for now.
+
+          // Check if we already placed a pillar recently?
+          // Let's just place pillars every 16m if deep.
+          if (z % 16 === 0 || Math.abs(z % 16) < step / 2) {
+            this.addPillar(roadGroup, z, road.width);
+          }
+
+          // Add railing segment for this step?
+          // Railing segment length = step.
+          this.addRailingSegment(roadGroup, z, step, road.width);
+        }
       }
     });
   }
 
-  // Строим опоры и перила для моста
-  private buildBridgeStructure(parent: THREE.Group, localZ: number, length: number, width: number) {
-    const railH = 1.0;
-    const mat = new THREE.MeshStandardMaterial({ color: "#888888", roughness: 0.5 });
 
-    // Перила (Box)
-    const railGeo = new THREE.BoxGeometry(0.3, railH, length);
-    const leftRail = new THREE.Mesh(railGeo, mat);
-    leftRail.position.set(-width / 2, railH / 2, localZ);
-    parent.add(leftRail);
 
-    const rightRail = new THREE.Mesh(railGeo, mat);
-    rightRail.position.set(width / 2, railH / 2, localZ);
-    parent.add(rightRail);
-
-    // Опоры (Pillars) - идут вниз до "дна"
-    // Дно примерно на -5.
-    const pillarGeo = new THREE.CylinderGeometry(0.6, 0.6, 6);
+  private addPillar(parent: THREE.Group, localZ: number, width: number) {
+    const pillarGeo = new THREE.CylinderGeometry(0.6, 0.6, 8); // Deep pillar
     const pillarMat = new THREE.MeshStandardMaterial({ color: "#555555" });
 
-    const addPillar = (x: number, z: number) => {
-      const p = new THREE.Mesh(pillarGeo, pillarMat);
-      p.position.set(x, -3, z); // Центр на -3, высота 6 -> от 0 до -6.
-      parent.add(p);
-    }
+    const p1 = new THREE.Mesh(pillarGeo, pillarMat);
+    p1.position.set(-width / 2 + 1, -4, localZ);
+    parent.add(p1);
 
-    addPillar(-width / 2 + 0.5, localZ - length / 2 + 2);
-    addPillar(width / 2 - 0.5, localZ - length / 2 + 2);
-    addPillar(-width / 2 + 0.5, localZ + length / 2 - 2);
-    addPillar(width / 2 - 0.5, localZ + length / 2 - 2);
+    const p2 = new THREE.Mesh(pillarGeo, pillarMat);
+    p2.position.set(width / 2 - 1, -4, localZ);
+    parent.add(p2);
   }
+
+  private addRailingSegment(parent: THREE.Group, midZ: number, length: number, width: number) {
+    const railH = 1.0;
+    const mat = new THREE.MeshStandardMaterial({ color: "#888888", roughness: 0.5 });
+    const railGeo = new THREE.BoxGeometry(0.3, railH, length);
+
+    const left = new THREE.Mesh(railGeo, mat);
+    left.position.set(-width / 2, railH / 2, midZ);
+    parent.add(left);
+
+    const right = new THREE.Mesh(railGeo, mat);
+    right.position.set(width / 2, railH / 2, midZ);
+    parent.add(right);
+  }
+
+  // Removed unused _unused_buildBridgeStructure
+
+
+
 
 
   private buildPathsToBuildings() {
-    // Тропинки от дороги к входу каждого здания (всегда)
     const mat = new THREE.MeshStandardMaterial({
-      color: GAME_CONFIG.pathColor,
-      map: this.pathTexture,
-      roughness: 0.95,
-      metalness: 0
+      color: "#dcdcdc",
+      map: this.tileTexture,
+      roughness: 0.9,
+      metalness: 0.1
     });
-    this.pathTexture.repeat.set(2, 2);
 
     const roads = WORLD_CONFIG.roads ?? [];
     if (roads.length === 0) return;
 
     const pathWidth = 2.4;
     const y = 0.03;
-
     const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
+    // Helpers locally defined in original... I need to duplicate or assume they work?
+    // They are defined inside the method in original. I must redefine them.
     const worldToLocal = (origin: { x: number; z: number }, rotY: number, x: number, z: number) => {
       const dx = x - origin.x;
       const dz = z - origin.z;
       const c = Math.cos(-rotY);
       const s = Math.sin(-rotY);
-      return {
-        x: dx * c + dz * s,
-        z: -dx * s + dz * c
-      };
+      return { x: dx * c + dz * s, z: -dx * s + dz * c };
     };
-
     const localToWorld = (origin: { x: number; z: number }, rotY: number, x: number, z: number) => {
       const c = Math.cos(rotY);
       const s = Math.sin(rotY);
-      return {
-        x: origin.x + x * c + z * s,
-        z: origin.z + (-x * s + z * c)
-      };
+      return { x: origin.x + x * c + z * s, z: origin.z + (-x * s + z * c) };
     };
-
     const closestPointOnRoad = (x: number, z: number) => {
       let best = { x: roads[0].position.x, z: roads[0].position.z };
       let bestD2 = Infinity;
@@ -1211,19 +1345,13 @@ export class World implements Updatable {
         const cx = clamp(local.x, -r.width / 2, r.width / 2);
         const cz = clamp(local.z, -r.length / 2, r.length / 2);
         const w = localToWorld(r.position, rot, cx, cz);
-        const dx = x - w.x;
-        const dz = z - w.z;
-        const d2 = dx * dx + dz * dz;
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          best = w;
-        }
+        const d2 = (x - w.x) ** 2 + (z - w.z) ** 2;
+        if (d2 < bestD2) { bestD2 = d2; best = w; }
       }
       return best;
     };
 
     WORLD_CONFIG.buildings.forEach((b) => {
-      // Точка у входа: дверь у нас на стороне +Z (в локальных координатах здания)
       const rot = (b as { rotation?: number }).rotation ?? 0;
       const doorLocalZ = b.size.z / 2 + BUILDING_LAYOUT.door.localZOutset;
       const doorWorld = localToWorld(b.position, rot, 0, doorLocalZ);
@@ -1235,10 +1363,56 @@ export class World implements Updatable {
       if (len < 0.5) return;
 
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, pathWidth), mat);
-      mesh.position.set((doorWorld.x + roadWorld.x) / 2, y, (doorWorld.z + roadWorld.z) / 2);
-      mesh.rotation.y = -Math.atan2(dz, dx);
+      const midX = (doorWorld.x + roadWorld.x) / 2;
+      const midZ = (doorWorld.z + roadWorld.z) / 2;
+      mesh.position.set(midX, y, midZ);
+      const angle = -Math.atan2(dz, dx);
+      mesh.rotation.y = angle;
       mesh.receiveShadow = true;
       this.group.add(mesh);
+
+      // Store path for collision
+      this.buildingPaths.push({
+        p1: new THREE.Vector2(doorWorld.x, doorWorld.z),
+        p2: new THREE.Vector2(roadWorld.x, roadWorld.z),
+        width: pathWidth
+      });
+
+      // Add Bushes along the sides
+      // Left and Right of the path vector.
+      // Vector P = (dx, dz). Normal = (-dz, dx).
+      const ndx = -dz / len;
+      const ndz = dx / len;
+
+      const bushSpacing = 3.5;
+      const steps = Math.floor(len / bushSpacing);
+      const offset = (pathWidth / 2) + 0.8; // Distance from center
+
+
+
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const tx = roadWorld.x + dx * t;
+        const tz = roadWorld.z + dz * t;
+
+        // Left bush
+        const lx = tx + ndx * offset;
+        const lz = tz + ndz * offset;
+        // Right bush
+        const rx = tx - ndx * offset;
+        const rz = tz - ndz * offset;
+
+        const createMiniBush = (bx: number, bz: number) => {
+          // Use new tree-style bush with smaller scale
+          const b = this.createBushMesh(0.5);
+          const h = this.getTerrainHeight(bx, bz);
+          b.position.set(bx, h, bz);
+          this.group.add(b);
+        };
+
+        if (Math.random() > 0.3) createMiniBush(lx, lz);
+        if (Math.random() > 0.3) createMiniBush(rx, rz);
+      }
     });
   }
 
@@ -1475,7 +1649,6 @@ export class World implements Updatable {
         const car = new Car([new THREE.Vector3(w.x, 0, w.z)], {
           color: carColor,
           speed: 0,
-          y: 0.23,
           parked: true,
           plateText
         });
@@ -1626,65 +1799,28 @@ export class World implements Updatable {
 
       let h = this.getWorldHeight(wx, wz);
 
+      // FIX: If terrain is deep (river), keep marking flat at road level (0).
+      if (h < -0.5) h = 0;
+
       // Lift slightly above road
-      const isBridge = (Math.abs(wx - (-70)) < 6 && Math.abs(wz - (-40)) < 16);
       h += 0.055;
 
       // Set Z (which becomes Y). 
-      // Note: PlaneGeometry is XY. We rotate X=-90. So Z becomes Y.
-      // BUT we are adding this mesh to a Group which might be positioned/rotated?
-      // Actually addCenterLine adds to 'group' which IS the road group (at road.position?).
-      // If the group is at road.position, we need to set Z to (h - roadHeight)?
-      // No, World.buildRoads adds road meshes to `this.group` (Scene).
-      // Let's check `buildRoads`.
-      // "const roadGroup = new THREE.Group(); ... this.group.add(roadGroup);"
-      // "roadGroup.position.set(road.position.x, 0, road.position.z);"
-      // So the group is at y=0.
-      // So setting Z=h is correct (absolute height).
-
       pos.setZ(i, h);
     }
 
     geo.computeVertexNormals();
 
-    const line = new THREE.Mesh(geo, material);
-    // Position: We baked offsetX/centerZ/h into vertices?
-    // No, we baked Height into Z.
-    // X and Y (local) are still relative to 0.
-    // If we baked H into Z, we rely on the mesh being at (0,0,0) world-wise?
-    // No, the roadGroup is at (road.x, 0, road.z).
-    // The previous code: line.position.set(offsetX, 0.055, centerZ).
-    // If we use deformed geometry, we should probably position the mesh at (0,0,0) local to roadGroup
-    // and bake the Full Local Offsets into the vertices.
-
-    // Let's Bake offsets into vertices to match World logic easier.
+    // Bake offsets into vertices to match World logic easier.
     for (let i = 0; i < pos.count; i++) {
       const lx = pos.getX(i);
       const ly = pos.getY(i);
 
-      // We want the vertex to appear at (offsetX, h, centerZ) in local space (relative to roadGroup).
-      // Plane XY. Rotated -90 around X.
-      // Post-rotation:
-      // NewX = OldX
-      // NewY = OldZ
-      // NewZ = -OldY
-
-      // We use standard PlaneGeometry.
-      // We want final vertex at (offsetX + lx, h, centerZ + ly).
-      // If we set Mesh position to (0,0,0).
-      // We need to set attributes such that ApplyMatrix(RotX -90) gives results.
-
-      // Instead of brain-twisting, let's just use World coordinates for everything?
-      // But the roadGroup handles the Rotation Y of the road!
-      // So we need height `h` relative to what? Absolute.
-      // RoadGroup is at y=0.
-      // So `h` is correct.
-
-      // We need to bake offsetX and centerZ into the geometry so we can place the mesh at (0,0,0) local.
       pos.setX(i, lx + offsetX);
-      pos.setY(i, ly + centerZ); // This is "Z" (lengthwise) before rotation
+      pos.setY(i, ly + centerZ);
     }
 
+    const line = new THREE.Mesh(geo, material);
     line.rotation.x = -Math.PI / 2;
     line.receiveShadow = false;
     return line;
@@ -1705,10 +1841,18 @@ export class World implements Updatable {
       const z = -length / 2 + dashLength / 2 + i * (dashLength + gap);
 
       // Calculate world pos just to check intersection and height
-      const world = this.localToWorldXZ(roadX, roadZ, rot, offsetX, z);
-      if (this.isInAnyIntersection(world.x, world.z)) continue;
+      // Check center, start, and end of dash to strictly avoid intersection
+      const wCenter = this.localToWorldXZ(roadX, roadZ, rot, offsetX, z);
+      const wStart = this.localToWorldXZ(roadX, roadZ, rot, offsetX, z - dashLength / 2);
+      const wEnd = this.localToWorldXZ(roadX, roadZ, rot, offsetX, z + dashLength / 2);
 
-      const h = this.getWorldHeight(world.x, world.z);
+      if (this.isInAnyIntersection(wCenter.x, wCenter.z) ||
+        this.isInAnyIntersection(wStart.x, wStart.z) ||
+        this.isInAnyIntersection(wEnd.x, wEnd.z)) {
+        continue;
+      }
+
+
 
       // Create a small segment. Since it's short (3m), we can keep it flat but tilted?
       // Or just flat at the sampled height. 3m on a hill might clip if flat.
@@ -1729,7 +1873,7 @@ export class World implements Updatable {
         const wz = roadZ + (-effectiveX * s + effectiveZ * c);
 
         let vH = this.getWorldHeight(wx, wz);
-        const isBridge = (Math.abs(wx - (-70)) < 6 && Math.abs(wz - (-40)) < 16);
+        if (vH < -0.5) vH = 0;
         vH += 0.055;
 
         pos.setX(k, effectiveX);
@@ -1766,9 +1910,10 @@ export class World implements Updatable {
     const boxGeo = new THREE.BoxGeometry(0.5, 1.2, 0.5);
     const lightGeo = new THREE.CircleGeometry(0.15, 16);
 
-    const pad = 1;
+
     this.intersections.forEach((it) => {
-      const r = it.halfSize + pad;
+      // Ставим светофоры ближе к уголку перекрёстка (НЕ используем halfSize, который для разметки)
+      const r = it.roadWidth / 2 + 0.6;
       const positions: Array<{ x: number; z: number; rot: number; type: TrafficDirection }> = [
         { x: -r, z: -r, rot: 0, type: "NS" },
         { x: r, z: -r, rot: -Math.PI / 2, type: "EW" },
@@ -1777,8 +1922,13 @@ export class World implements Updatable {
       ];
 
       positions.forEach((pos) => {
+        const tX = pos.x + it.x;
+        const tZ = pos.z + it.z;
+        // Check if traffic light would be inside a parking lot
+        if (this.isPointInParking(tX, tZ, 1.0)) return;
+
         const tl = new THREE.Group();
-        tl.position.set(pos.x + it.x, 0, pos.z + it.z);
+        tl.position.set(tX, 0, tZ);
 
         const pole = new THREE.Mesh(poleGeo, poleMat);
         pole.position.y = 2;
@@ -1952,7 +2102,7 @@ export class World implements Updatable {
       // Можно было бы взять min/max по углам, но для простоты центр + возможный цоколь.
       const groundH = this.getWorldHeight(safePos.x, safePos.z);
 
-      const building = createBuilding({ ...data, position: { ...safePos, y: groundH } }, {
+      const building = createBuilding({ ...data, position: safePos }, {
         wall: this.wallTexture,
         roof: this.roofTexture,
         windows: this.windowTexture
