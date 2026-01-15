@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
+  // Используем переменную, если она есть, иначе корень (для локалки)
+  base: process.env.BASE_URL || '/',
   resolve: {
     alias: {
       "@core": fileURLToPath(new URL("./src/core", import.meta.url)),
