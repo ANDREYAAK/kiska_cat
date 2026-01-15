@@ -3855,7 +3855,7 @@ void main() {
           <button class="ui-modal__close" type="button" data-role="promo-close" aria-label="Закрыть уведомление">×</button>
         </div>
       </div>
-      <div class="ui-hint">WASD/стрелки, джойстик • Shift — быстрый бег • Space — прыжок • E — выйти из машины • мышь/палец для обзора • колесо/пинч для масштаба</div>
+
       <div class="minimap" data-role="minimap">
         <canvas data-role="minimap-canvas"></canvas>
       </div>
