@@ -912,8 +912,22 @@ export class World implements Updatable {
     });
 
     beaches.forEach((b) => {
-      const beach = new THREE.Mesh(new THREE.PlaneGeometry(b.width, b.depth), material);
-      beach.position.set(b.position.x, 0.01, b.position.z);
+      // Need segments to follow terrain to avoid clipping?
+      // Beaches are usually flat near water?
+      // Let's segment them just in case.
+      const segs = 16;
+      const geo = new THREE.PlaneGeometry(b.width, b.depth, segs, segs);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const lx = pos.getX(i);
+        const ly = pos.getY(i);
+        const h = this.getWorldHeight(b.position.x + lx, b.position.z - ly);
+        pos.setZ(i, h);
+      }
+      geo.computeVertexNormals();
+
+      const beach = new THREE.Mesh(geo, material);
+      beach.position.set(b.position.x, 0.12, b.position.z); // Lift up
       beach.rotation.x = -Math.PI / 2;
       beach.receiveShadow = true;
       this.group.add(beach);
@@ -925,16 +939,48 @@ export class World implements Updatable {
     const waterMat = new THREE.MeshStandardMaterial({
       color: "#4FA4F4",
       roughness: 0.1,
-      metalness: 0.3,
+      metalness: 0.5,
       transparent: true,
-      this.group.add(water);
+      opacity: 0.85
     });
 
-    // Доп. река под мостом
-    const river = new THREE.Mesh(new THREE.PlaneGeometry(300, 20), material);
-    // Река вдоль X, на Z=-40.
-    river.position.set(0, -2.5, -40);
+    const waters = (WORLD_CONFIG as { waterAreas?: Array<{ position: { x: number; z: number }; width: number; depth: number }> }).waterAreas;
+    waters?.forEach((w) => {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w.width, w.depth), waterMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(w.position.x, -1.8, w.position.z);
+      this.group.add(mesh);
+    });
+
+    // 2. The Curved River
+    // We construct a mesh that follows the river path along X.
+    const riverLen = 400;
+    const segs = 120;
+    const riverWidth = 18;
+    const riverGeo = new THREE.PlaneGeometry(riverLen, riverWidth, segs, 4);
+
+    const pos = riverGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i);
+      const ly = pos.getY(i);
+
+      // lx is along X world approx.
+      const wx = lx;
+      const centerZ = this.getRiverCenterZ(wx);
+
+      // ly is width (local Y for plane, becomes Z after rotation).
+      // Let's set X = wx.
+      // Let's set Y = -(centerZ + ly). (Because RotX -90 flips Y->-Z)
+
+      pos.setX(i, wx);
+      pos.setY(i, -(centerZ + ly));
+      pos.setZ(i, 0);
+    }
+
+    riverGeo.computeVertexNormals();
+    const river = new THREE.Mesh(riverGeo, waterMat);
     river.rotation.x = -Math.PI / 2;
+    river.position.y = -3.8;
     this.group.add(river);
   }
 
@@ -1844,12 +1890,8 @@ export class World implements Updatable {
       parkMesh.geometry.computeVertexNormals();
 
       parkMesh.rotation.x = -Math.PI / 2;
-      // Position Y is added to vertex displacement.
-      // But we just set vertex Z (local) which becomes height.
-      // So mesh position Y should be 0.015 (offset) relative to 0?
-      // No, we set vertex to EXACT height 'h'.
-      // If we put mesh at y=0.015, we add 0.015 to h. That is good (layering).
-      parkMesh.position.set(park.position.x, 0.015, park.position.z);
+      // Raising to 0.15 to avoid z-fighting with ground
+      parkMesh.position.set(park.position.x, 0.15, park.position.z);
       parkMesh.receiveShadow = true;
       this.group.add(parkMesh);
     });
@@ -1888,7 +1930,22 @@ export class World implements Updatable {
 
   private buildBuildings() {
     WORLD_CONFIG.buildings.forEach((data) => {
-      const safePos = this.getBuildingSafePosition(data);
+      let safePos = this.getBuildingSafePosition(data);
+
+      // Check if inside river. If so, move it.
+      // River X ~ any. River Z getsRiverCenterZ(x). width 14.
+      // We push it along Z axis north or south?
+      const riverZ = this.getRiverCenterZ(safePos.x);
+      const riverDist = safePos.z - riverZ;
+      const margin = data.size.z / 2 + 9.0; // half building + river half width + buffer
+
+      if (Math.abs(riverDist) < margin) {
+        // Push away
+        const pushDir = Math.sign(riverDist) || 1;
+        const newZ = riverZ + pushDir * margin;
+        safePos = { x: safePos.x, z: newZ };
+      }
+
       const rot = (data as { rotation?: number }).rotation ?? 0;
 
       // Вычисляем высоту фундамента. Берем высоту в центре здания.
