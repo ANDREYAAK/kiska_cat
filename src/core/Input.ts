@@ -32,7 +32,11 @@ export class Input {
     const joy = this.joystick.getVector();
     const joyLen = Math.hypot(joy.x, joy.y);
     if (joyLen > 0.05) {
-      return { x: joy.x, z: -joy.y };
+      // Apply sensitivity curve to steering (X) to make driving straight easier on mobile
+      // Using cubic function (x³) or x*abs(x) softens the center response.
+      // Let's use x * |x| for a natural feel.
+      const steering = joy.x * Math.abs(joy.x);
+      return { x: steering, z: -joy.y };
     }
 
     return { x: 0, z: 0 };
