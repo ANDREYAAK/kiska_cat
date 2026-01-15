@@ -1,0 +1,273 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", Arial, sans-serif;
+  background: #7cc8e2;
+}
+
+canvas {
+  display: block;
+}
+
+.ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ui-toast {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  max-width: min(680px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(10, 24, 34, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  text-align: center;
+  pointer-events: auto; /* чтобы закрывалось кликом */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ui.toast-open .ui-toast {
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.ui-top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.logo {
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 1px;
+  font-size: 24px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.ui-buttons {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.ui-button {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.ui-button:active {
+  transform: translateY(1px);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.minimap {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  /* Мини-карта должна быть “незаметной” в углу */
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.minimap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ui-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
+  z-index: 8;
+  pointer-events: auto;
+}
+
+.ui-modal[hidden] {
+  display: none;
+}
+
+.ui-modal__card {
+  position: relative;
+  max-width: 420px;
+  width: calc(100% - 32px);
+  padding: 20px 56px 18px 18px; /* оставляем место под крестик справа */
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.18);
+  color: #1b2a38;
+  font-size: 16px;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+.ui-modal__text {
+  font-weight: 600;
+  text-align: center;
+}
+
+.ui-modal__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #f0f4f7;
+  color: #2c3e50;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.ui-modal__close:hover {
+  background: #e1e8ed;
+}
+
+.ui.map-open .minimap {
+  top: 50%;
+  left: 50%;
+  width: min(520px, 92vw);
+  height: min(520px, 92vw);
+  transform: translate(-50%, -50%);
+  border-radius: 22px;
+  pointer-events: auto;
+}
+
+.ui.help-hidden .ui-hint {
+  display: none;
+}
+
+.joystick {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+  touch-action: none;
+  display: none;
+}
+
+.joystick-stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-top: -28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.action-buttons {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.action-button {
+  width: 110px;
+  height: 56px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+}
+
+.action-button:active {
+  transform: translateY(1px);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ui-hint {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+@media (pointer: coarse) {
+  .joystick {
+    display: block;
+  }
+}
+
+@media (pointer: fine) {
+  .action-buttons {
+    display: none;
+  }
+}
