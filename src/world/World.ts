@@ -130,20 +130,16 @@ export class World implements Updatable {
   public getWorldHeight(x: number, z: number): number {
     // Если мы на дороге, возвращаем высоту дороги.
     // Если нет — высоту земли.
-    // Но для упрощения физики (чтобы не проваливаться сквозь мост) берём максимум из земли и "уровня моста" в зоне моста.
 
-    // Простейшая проверка:
     const tH = this.getTerrainHeight(x, z);
 
     // Зона моста (над оврагом): если x,z попадает в овраг, но мы на дороге — высота 0 (или выше).
     // Овраг: Z около -40. Дорога идёт по X=-70.
-    // Координаты моста: X ≈ -70 (ширина 10), Z ≈ -40 (ширина оврага ~20).
     const isBridgeZone = Math.abs(x - (-70)) < 6 && Math.abs(z - (-40)) < 12;
     if (isBridgeZone) {
       return Math.max(tH, 0.04);
     }
 
-    // Зона холма: дорога поднимается вместе с землей.
     return tH;
   }
 
@@ -151,30 +147,27 @@ export class World implements Updatable {
     let h = 0;
 
     // 1) Овраг / Река (Ravine)
-    // Проходит вдоль Z = -40, тянется по X.
-    // Ширина ~ 24 метра. Глубина ~ 5 метров.
     const riverZ = -40;
     const riverW = 14;
     const riverDist = Math.abs(z - riverZ);
     if (riverDist < riverW) {
-      // Smoothstep-like depression
-      const k = riverDist / riverW; // 0..1
-      const depth = 5.0 * (Math.cos(k * Math.PI) + 1) * 0.5; // Bell curve
+      const k = riverDist / riverW;
+      const depth = 5.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
       h -= depth;
     }
 
-    // 2) Холм (Hill)
-    // Где-то в районе "Европейской" улицы (X=..., Z=130).
-    // Пусть холм будет центром в X=40, Z=130.
-    const hillX = 40;
-    const hillZ = 130;
-    const hillR = 50;
+    // 2) Холм (Hill) — теперь в парке (где много деревьев)
+    // Парк: X=-120, Z=-40. Но там река.
+    // Сдвинем холм чуть севернее реки, но все еще в "зеленой зоне".
+    // Например X=-110, Z=-80.
+    const hillX = -110;
+    const hillZ = -80;
+    const hillR = 45;
     const distSq = (x - hillX) ** 2 + (z - hillZ) ** 2;
     if (distSq < hillR * hillR) {
       const dist = Math.sqrt(distSq);
       const k = dist / hillR;
-      // Высота холма ~ 6 метров
-      h += 6.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
+      h += 7.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
     }
 
     return h;
@@ -1685,8 +1678,35 @@ export class World implements Updatable {
       metalness: 0.03
     });
     WORLD_CONFIG.parks?.forEach((park) => {
-      const parkMesh = new THREE.Mesh(new THREE.PlaneGeometry(park.width, park.depth), parkMaterial);
+      // Чтобы парк лежал на холме, нужно тоже сегментировать его.
+      const segs = 16;
+      const parkMesh = new THREE.Mesh(new THREE.PlaneGeometry(park.width, park.depth, segs, segs), parkMaterial);
+
+      const pos = parkMesh.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const lx = pos.getX(i);
+        const ly = pos.getY(i);
+        // World coords of this vertex
+        // park at park.position (center)
+        // Park rotation -PI/2 X creates local Z -> world Y? No.
+        // Plane is XY. rotated -90 X -> XZ.
+        // WorldX = parkPos.x + lx
+        // WorldZ = parkPos.z + (-ly)
+
+        const wx = park.position.x + lx;
+        const wz = park.position.z - ly;
+
+        const h = this.getTerrainHeight(wx, wz);
+        pos.setZ(i, h); // Z becomes Y after rotation
+      }
+      parkMesh.geometry.computeVertexNormals();
+
       parkMesh.rotation.x = -Math.PI / 2;
+      // Position Y is added to vertex displacement.
+      // But we just set vertex Z (local) which becomes height.
+      // So mesh position Y should be 0.015 (offset) relative to 0?
+      // No, we set vertex to EXACT height 'h'.
+      // If we put mesh at y=0.015, we add 0.015 to h. That is good (layering).
       parkMesh.position.set(park.position.x, 0.015, park.position.z);
       parkMesh.receiveShadow = true;
       this.group.add(parkMesh);
@@ -1728,11 +1748,21 @@ export class World implements Updatable {
     WORLD_CONFIG.buildings.forEach((data) => {
       const safePos = this.getBuildingSafePosition(data);
       const rot = (data as { rotation?: number }).rotation ?? 0;
-      const building = createBuilding({ ...data, position: safePos }, {
+
+      // Вычисляем высоту фундамента. Берем высоту в центре здания.
+      // Можно было бы взять min/max по углам, но для простоты центр + возможный цоколь.
+      const groundH = this.getWorldHeight(safePos.x, safePos.z);
+
+      const building = createBuilding({ ...data, position: { ...safePos, y: groundH } }, {
         wall: this.wallTexture,
         roof: this.roofTexture,
         windows: this.windowTexture
       });
+      // createBuilding внутри использует building.position.y (если мы передадим? Нет, interface BuildingConfig does not have y?)
+      // Check config: size: {x,y,z}, position: {x,z}.
+      // We need to patch createBuilding or just set building.position.y AFTER creation.
+
+      building.position.y = groundH;
 
       // Коллайдер для здания (с небольшим запасом, чтобы не заходить в фундамент)
       this.colliders.push({
@@ -1864,11 +1894,12 @@ export class World implements Updatable {
   }
 
   private addTree(x: number, z: number) {
+    const h = this.getWorldHeight(x, z);
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.35, 0.5, 2.6, 10),
       new THREE.MeshStandardMaterial({ color: "#7a5138", roughness: 0.9 })
     );
-    trunk.position.set(x, 1.3, z);
+    trunk.position.set(x, h + 1.3, z);
     trunk.castShadow = true;
     const leafColors = ["#3fbf74", "#34a96b", "#5cd18a"];
     for (let i = 0; i < 4; i += 1) {
@@ -1876,7 +1907,7 @@ export class World implements Updatable {
         new THREE.SphereGeometry(1.4 - i * 0.12, 12, 12),
         new THREE.MeshStandardMaterial({ color: leafColors[i % leafColors.length], roughness: 0.75 })
       );
-      leaves.position.set(x, 3.2 + i * 0.5, z + (i % 2 === 0 ? 0.2 : -0.2));
+      leaves.position.set(x, h + 3.2 + i * 0.5, z + (i % 2 === 0 ? 0.2 : -0.2));
       leaves.castShadow = true;
       this.group.add(leaves);
     }
@@ -1891,21 +1922,22 @@ export class World implements Updatable {
 
   private buildLamps() {
     const placeLamp = (x: number, z: number) => {
+      const h = this.getWorldHeight(x, z);
       const pole = new THREE.Mesh(
         new THREE.CylinderGeometry(0.1, 0.12, 2.8, 8),
         new THREE.MeshStandardMaterial({ color: "#7a5a3a" })
       );
-      pole.position.set(x, 1.4, z);
+      pole.position.set(x, h + 1.4, z);
       pole.castShadow = true;
 
       const light = new THREE.Mesh(
         new THREE.SphereGeometry(0.35, 12, 12),
         new THREE.MeshStandardMaterial({ color: "#ffd77b", emissive: "#ffd77b", emissiveIntensity: 0.8 })
       );
-      light.position.set(x, 2.9, z);
+      light.position.set(x, h + 2.9, z);
       light.castShadow = true;
       const glow = new THREE.PointLight("#ffd7a3", 0.5, 8);
-      glow.position.set(x, 2.9, z);
+      glow.position.set(x, h + 2.9, z);
       this.group.add(pole, light, glow);
     };
 
@@ -1929,18 +1961,19 @@ export class World implements Updatable {
 
   private buildUmbrellas() {
     WORLD_CONFIG.umbrellas.forEach((data) => {
+      const h = this.getWorldHeight(data.x, data.z);
       const pole = new THREE.Mesh(
         new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8),
         new THREE.MeshStandardMaterial({ color: "#f0f0f0" })
       );
-      pole.position.set(data.x, 1.2, data.z);
+      pole.position.set(data.x, h + 1.2, data.z);
       pole.castShadow = true;
 
       const top = new THREE.Mesh(
         new THREE.ConeGeometry(1.6, 0.9, 12),
         new THREE.MeshStandardMaterial({ color: data.color })
       );
-      top.position.set(data.x, 2.2, data.z);
+      top.position.set(data.x, h + 2.2, data.z);
       top.castShadow = true;
       this.group.add(pole, top);
     });
@@ -1962,12 +1995,15 @@ export class World implements Updatable {
       if (this.isPointOnRoad(x, z, 2.5)) continue;
       if (this.isPointInAreas(x, z, waters, 2.5)) continue;
 
+      if (this.isPointInAreas(x, z, waters, 2.5)) continue;
+
+      const h = this.getWorldHeight(x, z);
       const rotation = Math.random() * Math.PI * 2;
       const seat = new THREE.Mesh(
         new THREE.BoxGeometry(2.4, 0.2, 0.7),
         new THREE.MeshStandardMaterial({ color: "#8d5b3e" })
       );
-      seat.position.set(x, 0.6, z);
+      seat.position.set(x, h + 0.6, z);
       seat.rotation.y = rotation;
       seat.castShadow = true;
 
@@ -1975,7 +2011,7 @@ export class World implements Updatable {
         new THREE.BoxGeometry(2.4, 0.7, 0.15),
         new THREE.MeshStandardMaterial({ color: "#7b4f36" })
       );
-      back.position.set(x, 1.0, z - 0.25);
+      back.position.set(x, h + 1.0, z - 0.25);
       back.rotation.y = rotation;
       back.castShadow = true;
       this.group.add(seat, back);
@@ -1984,11 +2020,12 @@ export class World implements Updatable {
 
   private buildRocks() {
     WORLD_CONFIG.rocks.forEach((data) => {
+      const h = this.getWorldHeight(data.x, data.z);
       const rock = new THREE.Mesh(
         new THREE.SphereGeometry(data.size, 10, 10),
         new THREE.MeshStandardMaterial({ color: "#a2b1bf", roughness: 0.8 })
       );
-      rock.position.set(data.x, data.size * 0.5, data.z);
+      rock.position.set(data.x, h + data.size * 0.5, data.z);
       rock.castShadow = true;
       this.group.add(rock);
     });

@@ -293,7 +293,13 @@ engine.addUpdatable(world, {
       },
       {
         label: "МТС SHOP",
-        text: "С вашей Кредитной картой доступен кешбэк до 20% на всю технику"
+        text: "С вашей Кредитной картой доступен кешбэк до 20% на всю технику",
+        action: {
+          label: "Открыть каталог",
+          onClick: () => {
+            window.open("https://shop.mts.ru/catalog", "_blank");
+          }
+        }
       },
       {
         label: "Магазин одежды",
@@ -338,7 +344,8 @@ engine.addUpdatable(world, {
 
       const dismissed = promoDismissedByLabel[nearPromo.label] === true;
       if (!dismissed && shownPromoLabel !== nearPromo.label) {
-        hud.showPromo(nearPromo.text);
+        // @ts-ignore
+        hud.showPromo(nearPromo.text, nearPromo.action);
         shownPromoLabel = nearPromo.label;
       }
     } else if (activePromoLabel) {

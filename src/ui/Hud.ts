@@ -105,11 +105,34 @@ export class Hud {
     this.toastEl.hidden = true;
     this.element.classList.remove("toast-open");
   }
-
-  showPromo(text: string) {
-    this.promoTextEl.textContent = text;
-    this.promoEl.hidden = false;
-    this.promoEl.classList.add("open");
+  public showPromo(text: string, action?: { label: string; onClick: () => void }) {
+    if (!this.promoEl) return;
+    const p = this.promoEl.querySelector<HTMLParagraphElement>(".promo-text");
+    if (p) {
+      if (action) {
+        // Если есть действие, добавляем кнопку или инструкцию
+        p.innerHTML = `${text}<br><button class="promo-action-btn">${action.label}</button>`;
+        const btn = this.promoEl.querySelector<HTMLButtonElement>(".promo-action-btn");
+        if (btn) {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            action.onClick();
+          };
+          btn.style.marginTop = "8px";
+          btn.style.padding = "6px 12px";
+          btn.style.background = "#e30611";
+          btn.style.color = "white";
+          btn.style.border = "none";
+          btn.style.borderRadius = "4px";
+          btn.style.cursor = "pointer";
+          btn.style.fontSize = "14px";
+          btn.style.fontWeight = "bold";
+        }
+      } else {
+        p.innerText = text;
+      }
+    }
+    this.promoEl.classList.add("visible");
   }
 
   hidePromo() {
