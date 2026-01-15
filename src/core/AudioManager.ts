@@ -19,12 +19,15 @@ export class AudioManager {
         return this.enabled;
     }
 
-    play() {
+    async play() {
         if (!this.enabled) return;
         // Browser might block autoplay until interaction
-        this.music.play().catch((e) => {
+        try {
+            await this.music.play();
+        } catch (e) {
             console.warn("Audio playback blocked or failed:", e);
-        });
+            throw e;
+        }
     }
 
     pause() {

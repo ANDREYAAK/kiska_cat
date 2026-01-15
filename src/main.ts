@@ -30,11 +30,25 @@ hud.onMusicToggle(() => {
   hud.setMusicIcon(enabled);
 });
 // Try to start music on first interaction (if enabled)
-const startMusic = () => {
-  if (audioManager.isEnabled()) audioManager.play();
+// Try to start music on first interaction (if enabled)
+const startMusic = async () => {
+  if (audioManager.isEnabled()) {
+    try {
+      await audioManager.play();
+      // Only remove listeners if playback actually started
+      document.removeEventListener("click", startMusic);
+      document.removeEventListener("keydown", startMusic);
+      document.removeEventListener("touchstart", startMusic);
+      document.removeEventListener("pointerdown", startMusic);
+    } catch (e) {
+      // Failed (e.g. browser blocked it), keep listeners to try again on next interaction
+    }
+  }
 };
-document.addEventListener("click", startMusic, { once: true });
-document.addEventListener("keydown", startMusic, { once: true });
+document.addEventListener("click", startMusic);
+document.addEventListener("keydown", startMusic);
+document.addEventListener("touchstart", startMusic);
+document.addEventListener("pointerdown", startMusic);
 let activePromoLabel: string | null = null;
 let shownPromoLabel: string | null = null;
 let selectedParkedCar: THREE.Object3D | null = null;
