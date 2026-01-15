@@ -162,24 +162,28 @@ export class Player {
     const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.4 });
     const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 18), pupilMat);
     leftPupil.scale.set(1, 1, 0.45);
-    leftPupil.position.set(-0.34, 0.14, 0.92);
+    // Moved slightly forward (0.94)
+    leftPupil.position.set(-0.34, 0.14, 0.94);
     this.leftPupilBase.copy(leftPupil.position);
     catHead.add(leftPupil);
 
     const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 18), pupilMat);
     rightPupil.scale.set(1, 1, 0.45);
-    rightPupil.position.set(0.34, 0.14, 0.92);
+    // Moved slightly forward (0.94)
+    rightPupil.position.set(0.34, 0.14, 0.94);
     this.rightPupilBase.copy(rightPupil.position);
     catHead.add(rightPupil);
 
     const pupilHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const leftPupilHighlight = new THREE.Mesh(new THREE.SphereGeometry(0.028, 12, 12), pupilHighlightMat);
-    leftPupilHighlight.position.set(-0.3, 0.18, 0.98);
+    // Moved highlight forward to 1.02 to avoid clipping
+    leftPupilHighlight.position.set(-0.3, 0.18, 1.02);
     this.leftHighlightBase.copy(leftPupilHighlight.position);
     catHead.add(leftPupilHighlight);
 
     const rightPupilHighlight = new THREE.Mesh(new THREE.SphereGeometry(0.028, 12, 12), pupilHighlightMat);
-    rightPupilHighlight.position.set(0.27, 0.18, 0.98);
+    // Moved highlight forward to 1.02
+    rightPupilHighlight.position.set(0.27, 0.18, 1.02);
     this.rightHighlightBase.copy(rightPupilHighlight.position);
     catHead.add(rightPupilHighlight);
 

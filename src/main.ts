@@ -63,7 +63,6 @@ if (bank) {
   const spawnDistance = 4.2;
   player.setSpawn({ x: doorX + dirX * spawnDistance, z: doorZ + dirZ * spawnDistance, yaw: rot });
 }
-hud.showMessage("УРА! Вам выдали кредитную карту. Изучите город чтобы понять возможности карты");
 hud.onPromoClosed(() => {
   if (shownPromoLabel) promoDismissedByLabel[shownPromoLabel] = true;
 });
@@ -277,18 +276,20 @@ engine.addUpdatable(world, {
     // Уведомления у зданий (появляются при подходе к двери).
     const promos = [
       {
+        label: "МТС БАНК",
+        // Специальное сообщение при старте (или если подойти к банку)
+        text: "УРА! Вам выдали кредитную карту. Изучите город, чтобы найти скидки!"
+      },
+      {
         label: "МТС SHOP",
-        distance: 11,
         text: "С вашей Кредитной картой доступен кешбэк до 20% на всю технику"
       },
       {
         label: "Магазин одежды",
-        distance: 11,
         text: "Вам доступна скидка 3% на одежду по вашей кредитной карте"
       },
       {
         label: "МЕДСИ",
-        distance: 11,
         text: "Кешбэк 10 процентов на любые процедуры"
       }
     ] as const;
@@ -296,10 +297,20 @@ engine.addUpdatable(world, {
     let nearPromo: (typeof promos)[number] | null = null;
     if (!isDriving) {
       for (const p of promos) {
-        const door = world.getBuildingDoorPosition(p.label);
-        if (!door) continue;
-        const dist = Math.hypot(player.object.position.x - door.x, player.object.position.z - door.z);
-        if (dist <= p.distance) {
+        // Ищем здание по имени в конфиге, чтобы узнать его размеры и позицию
+        const building = WORLD_CONFIG.buildings.find((b) => b.label === p.label);
+        if (!building) continue;
+
+        // Определяем радиус "зоны действия" вокруг дома: половина размера + запас (4.5 метра)
+        // Берём максимум из ширины/глубины для простоты (можно точнее, но круг удобнее)
+        const radius = Math.max(building.size.x, building.size.z) / 2 + 4.5;
+
+        const dist = Math.hypot(
+          player.object.position.x - building.position.x,
+          player.object.position.z - building.position.z
+        );
+
+        if (dist <= radius) {
           nearPromo = p;
           break;
         }
