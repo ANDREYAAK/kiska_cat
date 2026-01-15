@@ -949,20 +949,25 @@ export class Car implements Updatable {
     const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.4 });
     const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.12 * s, 24, 18), pupilMat);
     leftPupil.scale.set(1, 1, 0.45);
-    leftPupil.position.set(-0.34 * s, 0.14 * s, 0.92 * s);
+    // Moved slightly forward (0.95 * s)
+    leftPupil.position.set(-0.34 * s, 0.14 * s, 0.95 * s);
     head.add(leftPupil);
 
     const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.12 * s, 24, 18), pupilMat);
     rightPupil.scale.set(1, 1, 0.45);
-    rightPupil.position.set(0.34 * s, 0.14 * s, 0.92 * s);
+    // Moved slightly forward (0.95 * s)
+    rightPupil.position.set(0.34 * s, 0.14 * s, 0.95 * s);
     head.add(rightPupil);
 
     const pupilHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const leftPupilHighlight = new THREE.Mesh(new THREE.SphereGeometry(0.028 * s, 12, 12), pupilHighlightMat);
-    leftPupilHighlight.position.set(-0.3 * s, 0.18 * s, 0.98 * s);
+    // Moved highlight forward to 1.05 * s to avoid clipping
+    leftPupilHighlight.position.set(-0.3 * s, 0.18 * s, 1.05 * s);
     head.add(leftPupilHighlight);
 
     const rightPupilHighlight = new THREE.Mesh(new THREE.SphereGeometry(0.028 * s, 12, 12), pupilHighlightMat);
+    // Moved highlight forward to 1.05 * s
+    rightPupilHighlight.position.set(0.27 * s, 0.18 * s, 1.05 * s);
     head.add(rightPupilHighlight);
 
 
