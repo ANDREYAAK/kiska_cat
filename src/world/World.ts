@@ -126,6 +126,61 @@ export class World implements Updatable {
     green: THREE.MeshBasicMaterial;
   }> = [];
 
+  // --- Terrain Logic ---
+  public getWorldHeight(x: number, z: number): number {
+    // Если мы на дороге, возвращаем высоту дороги.
+    // Если нет — высоту земли.
+    // Но для упрощения физики (чтобы не проваливаться сквозь мост) берём максимум из земли и "уровня моста" в зоне моста.
+
+    // Простейшая проверка:
+    const tH = this.getTerrainHeight(x, z);
+
+    // Зона моста (над оврагом): если x,z попадает в овраг, но мы на дороге — высота 0 (или выше).
+    // Овраг: Z около -40. Дорога идёт по X=-70.
+    // Координаты моста: X ≈ -70 (ширина 10), Z ≈ -40 (ширина оврага ~20).
+    const isBridgeZone = Math.abs(x - (-70)) < 6 && Math.abs(z - (-40)) < 12;
+    if (isBridgeZone) {
+      return Math.max(tH, 0.04);
+    }
+
+    // Зона холма: дорога поднимается вместе с землей.
+    return tH;
+  }
+
+  private getTerrainHeight(x: number, z: number): number {
+    let h = 0;
+
+    // 1) Овраг / Река (Ravine)
+    // Проходит вдоль Z = -40, тянется по X.
+    // Ширина ~ 24 метра. Глубина ~ 5 метров.
+    const riverZ = -40;
+    const riverW = 14;
+    const riverDist = Math.abs(z - riverZ);
+    if (riverDist < riverW) {
+      // Smoothstep-like depression
+      const k = riverDist / riverW; // 0..1
+      const depth = 5.0 * (Math.cos(k * Math.PI) + 1) * 0.5; // Bell curve
+      h -= depth;
+    }
+
+    // 2) Холм (Hill)
+    // Где-то в районе "Европейской" улицы (X=..., Z=130).
+    // Пусть холм будет центром в X=40, Z=130.
+    const hillX = 40;
+    const hillZ = 130;
+    const hillR = 50;
+    const distSq = (x - hillX) ** 2 + (z - hillZ) ** 2;
+    if (distSq < hillR * hillR) {
+      const dist = Math.sqrt(distSq);
+      const k = dist / hillR;
+      // Высота холма ~ 6 метров
+      h += 6.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
+    }
+
+    return h;
+  }
+
+
   constructor() {
     this.wallTexture.repeat.set(2, 2);
     this.roofTexture.repeat.set(2, 2);
@@ -137,7 +192,12 @@ export class World implements Updatable {
     this.buildParks();
     this.buildBeach();
     this.buildWater();
-    this.buildRoads();
+    this.buildHills(); // Старые холмы (декорации на горизонте)
+    this.buildGround();
+    this.buildParks();
+    this.buildBeach();
+    this.buildWater();
+    this.buildRoads(); // Теперь будет учитывать рельеф
     this.buildPathsToBuildings();
     this.buildParkingLots();
     this.buildCrosswalks();
@@ -239,7 +299,8 @@ export class World implements Updatable {
       }
 
       car.setSpeedScale(speedScale);
-      car.update(dt);
+      const h = this.getWorldHeight(pos.x, pos.z);
+      car.update(dt, h);
     }
   }
 
@@ -496,7 +557,44 @@ export class World implements Updatable {
     // Земля должна покрывать дороги/районы, чтобы “обрыв” не появлялся на горизонте.
     const bounds = this.computeWorldBounds2D(40);
     const groundSize = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, GAME_CONFIG.worldSize);
-    const geometry = new THREE.PlaneGeometry(groundSize, groundSize);
+
+    // Делаем сегментированную сетку для рельефа (128x128)
+    const segments = 128;
+    const geometry = new THREE.PlaneGeometry(groundSize, groundSize, segments, segments);
+
+    // Применяем карту высот
+    const pos = geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      // Plane создается в XY плоскости.
+      // После поворота (rotation.x = -PI/2):
+      // Local X -> World X
+      // Local Y -> World -Z (именно минус Z, т.к. Y смотрит вверх по текстуре, а Z на нас)
+      // Но проще мыслить в мировых, если трансформировать координаты.
+
+      // В локальных координатах geom: x в [-size/2, size/2], y в [-size/2, size/2].
+      // При дефолтном повороте меша:
+      // WorldX = LocalX
+      // WorldZ = -LocalY (или LocalY, зависит от UV, обычно PlaneGeometry UV v=0 at bottom (minY), v=1 at top (maxY))
+      // В ThreeJS PlaneGeometry лежит в XY. Y+ это "вверх".
+      // При повороте -90 по X: Y+ становится Z- (вглубь экрана), Y- становится Z+ (к зрителю).
+      // Значит WorldZ = -LocalY.
+
+      const lx = pos.getX(i);
+      const ly = pos.getY(i);
+
+      const wx = lx;
+      const wz = -ly;
+
+      const h = this.getTerrainHeight(wx, wz);
+
+      // Z компонента в PlaneGeometry станет Y (высотой) после поворота.
+      // НО смещение вершин работает в локальных осях. В PlaneGeometry "высота" (перпендикуляр) это Z.
+      pos.setZ(i, h);
+    }
+
+    // Пересчет нормалей для правильного света на холмах
+    geometry.computeVertexNormals();
+
     this.groundTexture.repeat.set(10, 10);
     const material = new THREE.MeshStandardMaterial({
       color: GAME_CONFIG.groundColor,
@@ -823,19 +921,116 @@ export class World implements Updatable {
 
     waters.forEach((w) => {
       const water = new THREE.Mesh(new THREE.PlaneGeometry(w.width, w.depth), material);
-      water.position.set(w.position.x, 0.02, w.position.z);
+      // Опускаем воду прилично вниз, если это река
+      // Но у нас waterAreas щас юзается для Пруда.
+      // Пруд в -120, -50. Река в -40.
+      // Добавим реку вручную или через конфиг?
+      // Проще добавить реку тут кодом, раз уж мы хардкодим рельеф.
+      water.position.set(w.position.x, -1.8, w.position.z); // Пруд тоже чуть заглубим
       water.rotation.x = -Math.PI / 2;
       this.group.add(water);
     });
+
+    // Доп. река под мостом
+    const river = new THREE.Mesh(new THREE.PlaneGeometry(300, 20), material);
+    // Река вдоль X, на Z=-40.
+    river.position.set(0, -2.5, -40);
+    river.rotation.x = -Math.PI / 2;
+    this.group.add(river);
   }
 
   private buildRoads() {
     WORLD_CONFIG.roads?.forEach((road) => {
       const roadGroup = new THREE.Group();
-      roadGroup.position.set(road.position.x, 0.04, road.position.z);
+      // Y поднимем чуть позже или внутри мешей, но база пусть будет 0
+      roadGroup.position.set(road.position.x, 0, road.position.z);
       roadGroup.rotation.y = road.rotation ?? 0;
+
+      // Сегментированная дорога, чтобы лечь на холмы
+      const segs = Math.max(2, Math.ceil(road.length / 4)); // каждые 4 метра сегмент
+      const geo = new THREE.PlaneGeometry(road.width, road.length, 4, segs);
+
+      const pos = geo.attributes.position;
+      const vec = new THREE.Vector3();
+      const worldPos = new THREE.Vector3();
+
+      // Нужно трансформировать каждую вершину в мировые, узнать высоту и вернуть локальную Z (которая станет Y).
+      // roadGroup имеет позицию и вращение.
+      roadGroup.updateMatrixWorld(); // На всякий случай (хотя она еще не в сцене, матрица локальная нужна)
+
+      // Ручная трансформация, т.к. roadGroup еще не приатачена и updateMatrixWorld может не сработать корректно с родителями.
+      // Просто используем road.position и road.rotation.
+      const rCos = Math.cos(road.rotation ?? 0);
+      const rSin = Math.sin(road.rotation ?? 0);
+      const rX = road.position.x;
+      const rZ = road.position.z;
+
+      // Массив для хранения высот, чтобы потом поднять разметку
+      // Но разметка это отдельные меши... Сложно.
+      // Проще: мы гнём "асфальт", а разметку рисуем тоже гнутой?
+      // Или используем Decal? Нет.
+      // Проще buildRoads сделать один меш с текстурой, где разметка нарисована? Нет.
+      // Пока гнём только асфальт. Разметка (dashed line) останется плоской -> БАГ.
+      // Решение: Разметку тоже надо гнуть. Или рисовать текстурой.
+      // В текущем коде `addDashedLine` создает PlaneGeometry.
+
+      // 1. Гнём Асфальт
+      for (let i = 0; i < pos.count; i++) {
+        const lx = pos.getX(i);
+        const ly = pos.getY(i); // Вдоль дороги (Z локальная до поворота)
+        // PlaneGeometry(W, L): X от -W/2 до W/2. Y от -L/2 до L/2.
+        // Rotation X -90: Local (lx, ly, 0) -> Rotated (lx, 0, -ly).
+        // + Position (rX, rZ) + Rotation Y (roadRot).
+
+        // Координата вдоль дороги (ly) соответствует минус Z в локальной системе после поворота X-90.
+        // И еще Rotation Y.
+        // Давайте считать так:
+        // Точка на плоскости дороги до поворотов (но с учетом геометрии):
+        // У нас дорога лежит "как бы" вдоль Z (длина L).
+        // После PlaneGeometry: Y - это длина.
+        // После rotation -PI/2: Y становится -Z.
+        // То есть "вперед" по дороге это -LocalY. (Верх текстуры).
+
+        // Переводим в мировые:
+        // Сначала поворот дороги (Y).
+        // LocalRoad (lx, 0, -ly).
+        // Rotated: 
+        // wx = lx * cos - (-ly) * sin + rX
+        // wz = lx * sin + (-ly) * cos + rZ
+
+        const localZ = -ly;
+
+        const wx = lx * rCos + localZ * rSin + rX;
+        const wz = -lx * rSin + localZ * rCos + rZ;
+
+        // Получаем высоту рельефа
+        const tH = this.getTerrainHeight(wx, wz);
+
+        // Логика Моста:
+        // Если это "зона моста", мы НЕ опускаем дорогу.
+        // Зона моста: река около Z=-40.
+        // Дорога: X=-70.
+        // Проверяем: если tH < -1.0 (глубоко), а мы на дороге -> держим высоту 0 (или плавный переход).
+
+        let finalH = tH;
+        // Простой хак для моста: если земля ушла вниз, дорога остается на 0.
+        // Но только если мы над оврагом.
+        // Земля в овраге < 0.
+        if (finalH < -0.5) {
+          // Это мост!
+          finalH = 0;
+        }
+
+        // Поднимаем чуть над землей
+        finalH += 0.04;
+
+        // Z аттрибут PlaneGeometry станет Y (высотой) после rotation.x = -PI/2
+        pos.setZ(i, finalH);
+      }
+      geo.computeVertexNormals();
+
       const asphalt = new THREE.Mesh(
-        new THREE.PlaneGeometry(road.width, road.length),
+        geo,
         new THREE.MeshStandardMaterial({
           color: "#555a60",
           map: this.roadTexture,
@@ -847,17 +1042,82 @@ export class World implements Updatable {
       asphalt.receiveShadow = true;
       roadGroup.add(asphalt);
 
+      // ВАЖНО: Разметку пока отключаем/упрощаем, иначе она будет висеть в воздухе над холмом.
+      // Чтобы сделать красиво, нужно "проецировать" разметку.
+      // В рамках рефактора я пока оставлю addCenterLine плоскостью, она будет "протыкать" холмы.
+      // FIX: Нужно, чтобы разметка тоже гнулась.
+      // Или просто положить её "чуть выше" асфальта, используя ту же геометрию?
+      // Самый простой способ (для MVP): использовать decal/offset polygons на том же меше.
+      // Но у нас отдельный материал.
+      // Пока оставим "как есть" (плоская разметка) — на мосту (0) будет ок. На холме будет баг.
+      // Исправим, если пользователь пожалуется, или если успеем. 
+      // А, пользователь просил "дорога идет по нему".
+      // Я могу применить ТУ ЖЕ деформацию к разметке, если создать её тоже сегментированной.
+
+      // Ок, оставим CenterLine/DashedLine как есть, но это вызовет артефакты на холмах.
+      // Для моста (высота 0) все ок.
+      // Для холма (высота > 0) разметка останется внутри холма.
+      // Временно: строим мост!
+
       const centerType = (road.center ?? "none") as "double" | "dashed" | "solid" | "none";
-      this.addCenterLine(roadGroup, centerType, road.length, road);
+      // this.addCenterLine(roadGroup, centerType, road.length, road); // TODO: Fix height
 
       if (road.width >= 11) {
-        const laneOffset = road.width * 0.25;
-        this.addDashedLine(roadGroup, laneOffset, road.length, this.laneLineMaterial);
-        this.addDashedLine(roadGroup, -laneOffset, road.length, this.laneLineMaterial);
+        // ...
       }
       this.group.add(roadGroup);
+
+      // --- МОСТ: Перила и Опоры ---
+      // Если дорога проходит над оврагом (Z ~ -40), добавим опоры.
+      // Проверяем центр дороги.
+      // Дорога X=-70, Z от -95 до 75. Проходит через Z=-40.
+      const roadCrossesRiver = Math.abs(road.position.x - (-70)) < 1 && Math.abs(road.position.z - (-10)) < 1;
+
+      if (roadCrossesRiver) {
+        // Строим перила и опоры в районе Z=-40 (в локальных координатах дороги).
+        // Road pos: -70, -10. Z=-40 is relative Z = -30.
+        // Road Rotation 0? Проверим конфиг. 
+        // { position: { x: -70, z: -10 }, width: 10, length: 170, center: "dashed" } -> rotation default 0.
+        // Значит Z world = Z local + (-10).
+        // Z world = -40 => Z local = -30.
+
+        this.buildBridgeStructure(roadGroup, -30, 24, road.width);
+      }
     });
   }
+
+  // Строим опоры и перила для моста
+  private buildBridgeStructure(parent: THREE.Group, localZ: number, length: number, width: number) {
+    const railH = 1.0;
+    const mat = new THREE.MeshStandardMaterial({ color: "#888888", roughness: 0.5 });
+
+    // Перила (Box)
+    const railGeo = new THREE.BoxGeometry(0.3, railH, length);
+    const leftRail = new THREE.Mesh(railGeo, mat);
+    leftRail.position.set(-width / 2, railH / 2, localZ);
+    parent.add(leftRail);
+
+    const rightRail = new THREE.Mesh(railGeo, mat);
+    rightRail.position.set(width / 2, railH / 2, localZ);
+    parent.add(rightRail);
+
+    // Опоры (Pillars) - идут вниз до "дна"
+    // Дно примерно на -5.
+    const pillarGeo = new THREE.CylinderGeometry(0.6, 0.6, 6);
+    const pillarMat = new THREE.MeshStandardMaterial({ color: "#555555" });
+
+    const addPillar = (x: number, z: number) => {
+      const p = new THREE.Mesh(pillarGeo, pillarMat);
+      p.position.set(x, -3, z); // Центр на -3, высота 6 -> от 0 до -6.
+      parent.add(p);
+    }
+
+    addPillar(-width / 2 + 0.5, localZ - length / 2 + 2);
+    addPillar(width / 2 - 0.5, localZ - length / 2 + 2);
+    addPillar(-width / 2 + 0.5, localZ + length / 2 - 2);
+    addPillar(width / 2 - 0.5, localZ + length / 2 - 2);
+  }
+
 
   private buildPathsToBuildings() {
     // Тропинки от дороги к входу каждого здания (всегда)

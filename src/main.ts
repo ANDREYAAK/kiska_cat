@@ -211,9 +211,12 @@ engine.addUpdatable(world, {
         const worldMove = new THREE.Vector3()
           .addScaledVector(right, move.x)
           .addScaledVector(forward, move.z);
-        player.update(dt, { x: worldMove.x, z: worldMove.z }, { sprint, jump });
+
+        const gh = world.getWorldHeight(player.object.position.x, player.object.position.z);
+        player.update(dt, { x: worldMove.x, z: worldMove.z }, { sprint, jump }, gh);
       } else {
-        player.update(dt, { x: 0, z: 0 }, { sprint, jump });
+        const gh = world.getWorldHeight(player.object.position.x, player.object.position.z);
+        player.update(dt, { x: 0, z: 0 }, { sprint, jump }, gh);
       }
     } else if (drivingCar) {
       if (length > 0.01) {
@@ -246,6 +249,14 @@ engine.addUpdatable(world, {
       const resolved = world.resolveCarMovement(drivingCar.position, carCollisionRadius, drivingCar);
       drivingCar.position.x = resolved.x;
       drivingCar.position.z = resolved.z;
+      // Адаптируем высоту машины под рельеф/мост
+      const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+      drivingCar.position.y = h + 0.22;
+    }
+    // Адаптируем высоту машины под рельеф/мост
+    if (drivingCar) {
+      const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+      drivingCar.position.y = h + 0.22;
     }
 
     // Анимация дверей

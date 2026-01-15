@@ -385,7 +385,7 @@ export class Player {
     return pawGroup;
   }
 
-  update(dt: number, input: { x: number; z: number }, actions?: { sprint?: boolean; jump?: boolean }) {
+  update(dt: number, input: { x: number; z: number }, actions?: { sprint?: boolean; jump?: boolean }, groundHeight: number = 0) {
     const length = Math.hypot(input.x, input.z);
     const sprintingRequested = !!actions?.sprint;
 
@@ -410,10 +410,11 @@ export class Player {
     const sprinting = moving && sprintingRequested;
     this.animateCat(dt, moving, sprinting);
 
-    // Прыжок: простая вертикальная физика (земля на y=0).
-    const grounded = this.playerGroup.position.y <= 0.0001;
+    // Прыжок: простая вертикальная физика (земля на y=groundHeight).
+    // Позиция "ног" (центра) котика - это y.
+    const grounded = this.playerGroup.position.y <= groundHeight + 0.0001;
     if (grounded) {
-      this.playerGroup.position.y = 0;
+      this.playerGroup.position.y = groundHeight;
       if (this.verticalVelocity < 0) this.verticalVelocity = 0;
       if (actions?.jump) {
         this.verticalVelocity = GAME_CONFIG.playerJumpSpeed;
@@ -422,8 +423,8 @@ export class Player {
 
     this.verticalVelocity -= GAME_CONFIG.playerGravity * dt;
     this.playerGroup.position.y += this.verticalVelocity * dt;
-    if (this.playerGroup.position.y < 0) {
-      this.playerGroup.position.y = 0;
+    if (this.playerGroup.position.y < groundHeight) {
+      this.playerGroup.position.y = groundHeight;
       this.verticalVelocity = 0;
     }
   }

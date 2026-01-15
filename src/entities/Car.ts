@@ -83,7 +83,7 @@ export class Car implements Updatable {
     return { x: Math.sin(yaw), z: Math.cos(yaw) };
   }
 
-  update(dt: number) {
+  update(dt: number, groundHeight?: number) {
     if (this.path.length < 2) return;
     this.animTime += dt;
 
@@ -107,7 +107,12 @@ export class Car implements Updatable {
     const step = this.speed * this.speedScale * dt;
     this.object.position.x += dirX * Math.min(step, dist);
     this.object.position.z += dirZ * Math.min(step, dist);
-    this.object.position.y = this.y;
+    // Если передана высота земли - используем её, иначе фиксированная this.y
+    if (groundHeight !== undefined) {
+      this.object.position.y = groundHeight + 0.22; // + подвеска
+    } else {
+      this.object.position.y = this.y;
+    }
 
     // Поворачиваем машину по направлению движения.
     this.object.rotation.y = Math.atan2(dirX, dirZ);
