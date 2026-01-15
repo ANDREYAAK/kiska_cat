@@ -23,10 +23,9 @@ export class Hud {
     this.element.className = "ui";
     this.element.innerHTML = `
       <div class="ui-top">
-        <div class="logo">COASTAL WORLD</div>
+        <div class="logo">MTS City</div>
       </div>
       <div class="ui-buttons">
-        <button class="ui-button" type="button" data-action="toggle-map">MAP</button>
         <button class="ui-button" type="button" data-action="toggle-help">≡</button>
       </div>
       <div class="ui-toast" data-role="toast" aria-live="polite" hidden></div>
@@ -61,8 +60,9 @@ export class Hud {
     this.promoTextEl = promoText;
 
     // Кнопки
-    const mapBtn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-map"]');
-    mapBtn?.addEventListener("click", () => this.toggleMap());
+    // Клик по миникарте открывает большую карту
+    this.minimapWrap.addEventListener("click", () => this.toggleMap());
+    // Кнопка помощи
     const helpBtn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-help"]');
     helpBtn?.addEventListener("click", () => this.toggleHelp());
 
@@ -154,7 +154,8 @@ export class Hud {
     const ctx = this.minimapCtx;
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(-player.yaw);
+    // Разворачиваем стрелку на 180 градусов (Math.PI), так как она смотрела назад
+    ctx.rotate(-player.yaw + Math.PI);
     ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = "rgba(0,0,0,0.45)";
     ctx.lineWidth = Math.max(1, Math.round(this.minimapCanvas.width * 0.006));
@@ -263,7 +264,8 @@ export class Hud {
   private renderStaticMap(ctx: CanvasRenderingContext2D, w: number, h: number) {
     // Фон (слегка прозрачный, чтобы не мешал игре)
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = this.mapOpen ? "rgba(10, 24, 34, 0.78)" : "rgba(10, 24, 34, 0.55)";
+    // Фон: если открыта — почти непрозрачный, если мини — полупрозрачный
+    ctx.fillStyle = this.mapOpen ? "rgba(10, 24, 34, 0.95)" : "rgba(10, 24, 34, 0.55)";
     ctx.fillRect(0, 0, w, h);
 
     // Рамка
