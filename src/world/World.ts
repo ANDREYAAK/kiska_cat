@@ -128,38 +128,53 @@ export class World implements Updatable {
 
   // --- Terrain Logic ---
   public getWorldHeight(x: number, z: number): number {
-    // Если мы на дороге, возвращаем высоту дороги.
-    // Если нет — высоту земли.
-
     const tH = this.getTerrainHeight(x, z);
 
-    // Зона моста (над оврагом): если x,z попадает в овраг, но мы на дороге — высота 0 (или выше).
-    // Овраг: Z около -40. Дорога идёт по X=-70.
-    const isBridgeZone = Math.abs(x - (-70)) < 6 && Math.abs(z - (-40)) < 12;
+    // Check all roads. If x,z is ON A BRIDGE, return bridge height.
+    // Optimization: Check the known bridge road efficiently.
+    // Road at X=-70 crosses the river.
+    // Now the river is curved. Logic needs update.
+    // Simplified: If we are close to ANY road, we use the road's height rule.
+    // But roads themselves follow terrain, EXCEPT bridges.
+
+    // Let's rely on World.buildRoads logic which RAISES the road over the river.
+    // But physics needs to know this.
+    // Bridge location: X = -70, Z = -40 (approx).
+    const isBridgeZone = Math.abs(x - (-70)) < 6 && Math.abs(z - (-40)) < 16;
     if (isBridgeZone) {
+      // Bridge keeps height of the banks (approx 0).
       return Math.max(tH, 0.04);
     }
 
+    // Check if on the main "Park Road" (if we want that to be a bridge too?)
+    // No, only the X=-70 road is an explicit bridge for now.
+
     return tH;
+  }
+
+  // --- River curve function ---
+  // Returns the central Z of the river for a given X.
+  private getRiverCenterZ(x: number): number {
+    // Sinuosity: Z ≈ -40, but waves.
+    // Amp = 20, Freq = 0.03
+    return -40 + 20 * Math.sin(x * 0.02 + 1.0);
   }
 
   private getTerrainHeight(x: number, z: number): number {
     let h = 0;
 
-    // 1) Овраг / Река (Ravine)
-    const riverZ = -40;
+    // 1) River (Curved)
+    const riverZ = this.getRiverCenterZ(x);
     const riverW = 14;
     const riverDist = Math.abs(z - riverZ);
+
     if (riverDist < riverW) {
       const k = riverDist / riverW;
-      const depth = 5.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
+      const depth = 6.0 * (Math.cos(k * Math.PI) + 1) * 0.5;
       h -= depth;
     }
 
-    // 2) Холм (Hill) — теперь в парке (где много деревьев)
-    // Парк: X=-120, Z=-40. Но там река.
-    // Сдвинем холм чуть севернее реки, но все еще в "зеленой зоне".
-    // Например X=-110, Z=-80.
+    // 2) Hill (Park Area)
     const hillX = -110;
     const hillZ = -80;
     const hillR = 45;
@@ -171,6 +186,12 @@ export class World implements Updatable {
     }
 
     return h;
+  }
+
+  private isPointInRiver(x: number, z: number, margin = 0): boolean {
+    const riverZ = this.getRiverCenterZ(x);
+    const riverW = 14;
+    return Math.abs(z - riverZ) < (riverW - 2 + margin); // -2 accounts for shore
   }
 
 
@@ -900,27 +921,12 @@ export class World implements Updatable {
   }
 
   private buildWater() {
-    const material = new THREE.MeshStandardMaterial({
-      color: GAME_CONFIG.waterColor,
-      roughness: 0.25,
-      metalness: 0.15,
+    // 1. Static water areas (Lake/Ponds)
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: "#4FA4F4",
+      roughness: 0.1,
+      metalness: 0.3,
       transparent: true,
-      opacity: 0.9
-    });
-
-    const waters = (WORLD_CONFIG as { waterAreas?: Array<{ position: { x: number; z: number }; width: number; depth: number }> })
-      .waterAreas;
-    if (!waters || waters.length === 0) return;
-
-    waters.forEach((w) => {
-      const water = new THREE.Mesh(new THREE.PlaneGeometry(w.width, w.depth), material);
-      // Опускаем воду прилично вниз, если это река
-      // Но у нас waterAreas щас юзается для Пруда.
-      // Пруд в -120, -50. Река в -40.
-      // Добавим реку вручную или через конфиг?
-      // Проще добавить реку тут кодом, раз уж мы хардкодим рельеф.
-      water.position.set(w.position.x, -1.8, w.position.z); // Пруд тоже чуть заглубим
-      water.rotation.x = -Math.PI / 2;
       this.group.add(water);
     });
 
@@ -1447,7 +1453,7 @@ export class World implements Updatable {
 
     if (type === "dashed") {
       // Пунктир уже “сам” пропускает перекрёстки (см. isInAnyIntersection)
-      this.addDashedLine(group, 0, length, this.centerLineMaterial);
+      this.addDashedLine(group, 0, length, this.centerLineMaterial, road);
       return;
     }
 
@@ -1457,7 +1463,7 @@ export class World implements Updatable {
         const segLen = it.b - it.a;
         if (segLen < 0.6) return;
         const centerZ = (it.a + it.b) / 2;
-        group.add(this.createSolidLine(offsetX, segLen, this.centerLineMaterial, centerZ));
+        group.add(this.createSolidLine(offsetX, segLen, this.centerLineMaterial, centerZ, road));
       });
     };
 
@@ -1532,24 +1538,160 @@ export class World implements Updatable {
     });
   }
 
-  private createSolidLine(offsetX: number, length: number, material: THREE.MeshStandardMaterial, centerZ = 0) {
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.18, length), material);
-    line.position.set(offsetX, 0.055, centerZ);
+  private createSolidLine(offsetX: number, length: number, material: THREE.MeshStandardMaterial, centerZ = 0, road: (typeof WORLD_CONFIG.roads)[number]) {
+    // Segmented line to conform to hills
+    const segs = Math.max(2, Math.ceil(length / 4));
+    const geo = new THREE.PlaneGeometry(0.18, length, 1, segs);
+    const pos = geo.attributes.position;
+
+    // We need the road's transform to convert local vertex to world to sample height.
+    const rot = road.rotation ?? 0;
+    const roadX = road.position.x;
+    const roadZ = road.position.z;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+
+    for (let i = 0; i < pos.count; i++) {
+      // Plane is created at (0,0,0). centerZ shifts it?
+      // PlaneGeometry center is 0.
+      // We want it at offsetX, centerZ locally.
+      // The vertex positions are relative to the center of the geometry.
+      // We will manually transform them to World, get height, then back?
+      // Easier: Just calculate "World Height" for each vertex and set it as Z (before rotation).
+
+      // Geometry local coords (x, y) where y is along length (Z in our world frame)
+      // because we rotate x = -PI/2 later.
+      const lx = pos.getX(i); // This is width-wise (-0.09 to +0.09)
+      const ly = pos.getY(i); // This is length-wise (-len/2 to +len/2)
+
+      // Apply offsets in "Road Local" space
+      // The geometry will be placed at (offsetX, 0, centerZ) relative to road group?
+      // No, createSolidLine returns a Mesh that is added to road Group.
+      // So we need World Coords:
+      // Local to Road = (offsetX + lx, centerZ + ly)
+      const effectiveLocalX = offsetX + lx;
+      const effectiveLocalZ = centerZ + ly; // ly is -len/2..len/2 relative to the mesh center.
+      // Wait, PlaneGeometry is centered at 0. If centerZ!=0, we need to account.
+      // centerZ is the Z-position of the segment center relative to road center.
+      // So yes, centerZ + ly.
+
+      const wx = roadX + effectiveLocalX * c + effectiveLocalZ * s;
+      const wz = roadZ + (-effectiveLocalX * s + effectiveLocalZ * c);
+
+      let h = this.getWorldHeight(wx, wz);
+
+      // Lift slightly above road
+      const isBridge = (Math.abs(wx - (-70)) < 6 && Math.abs(wz - (-40)) < 16);
+      h += 0.055;
+
+      // Set Z (which becomes Y). 
+      // Note: PlaneGeometry is XY. We rotate X=-90. So Z becomes Y.
+      // BUT we are adding this mesh to a Group which might be positioned/rotated?
+      // Actually addCenterLine adds to 'group' which IS the road group (at road.position?).
+      // If the group is at road.position, we need to set Z to (h - roadHeight)?
+      // No, World.buildRoads adds road meshes to `this.group` (Scene).
+      // Let's check `buildRoads`.
+      // "const roadGroup = new THREE.Group(); ... this.group.add(roadGroup);"
+      // "roadGroup.position.set(road.position.x, 0, road.position.z);"
+      // So the group is at y=0.
+      // So setting Z=h is correct (absolute height).
+
+      pos.setZ(i, h);
+    }
+
+    geo.computeVertexNormals();
+
+    const line = new THREE.Mesh(geo, material);
+    // Position: We baked offsetX/centerZ/h into vertices?
+    // No, we baked Height into Z.
+    // X and Y (local) are still relative to 0.
+    // If we baked H into Z, we rely on the mesh being at (0,0,0) world-wise?
+    // No, the roadGroup is at (road.x, 0, road.z).
+    // The previous code: line.position.set(offsetX, 0.055, centerZ).
+    // If we use deformed geometry, we should probably position the mesh at (0,0,0) local to roadGroup
+    // and bake the Full Local Offsets into the vertices.
+
+    // Let's Bake offsets into vertices to match World logic easier.
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i);
+      const ly = pos.getY(i);
+
+      // We want the vertex to appear at (offsetX, h, centerZ) in local space (relative to roadGroup).
+      // Plane XY. Rotated -90 around X.
+      // Post-rotation:
+      // NewX = OldX
+      // NewY = OldZ
+      // NewZ = -OldY
+
+      // We use standard PlaneGeometry.
+      // We want final vertex at (offsetX + lx, h, centerZ + ly).
+      // If we set Mesh position to (0,0,0).
+      // We need to set attributes such that ApplyMatrix(RotX -90) gives results.
+
+      // Instead of brain-twisting, let's just use World coordinates for everything?
+      // But the roadGroup handles the Rotation Y of the road!
+      // So we need height `h` relative to what? Absolute.
+      // RoadGroup is at y=0.
+      // So `h` is correct.
+
+      // We need to bake offsetX and centerZ into the geometry so we can place the mesh at (0,0,0) local.
+      pos.setX(i, lx + offsetX);
+      pos.setY(i, ly + centerZ); // This is "Z" (lengthwise) before rotation
+    }
+
     line.rotation.x = -Math.PI / 2;
     line.receiveShadow = false;
     return line;
   }
 
-  private addDashedLine(group: THREE.Group, offsetX: number, length: number, material: THREE.MeshStandardMaterial) {
+  private addDashedLine(group: THREE.Group, offsetX: number, length: number, material: THREE.MeshStandardMaterial, road: (typeof WORLD_CONFIG.roads)[number]) {
     const dashLength = 3;
     const gap = 2;
     const count = Math.floor(length / (dashLength + gap));
+
+    const rot = road.rotation ?? 0;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const roadX = road.position.x;
+    const roadZ = road.position.z;
+
     for (let i = 0; i < count; i += 1) {
       const z = -length / 2 + dashLength / 2 + i * (dashLength + gap);
-      const world = this.localToWorldXZ(group.position.x, group.position.z, group.rotation.y, offsetX, z);
+
+      // Calculate world pos just to check intersection and height
+      const world = this.localToWorldXZ(roadX, roadZ, rot, offsetX, z);
       if (this.isInAnyIntersection(world.x, world.z)) continue;
-      const segment = new THREE.Mesh(new THREE.PlaneGeometry(0.18, dashLength), material);
-      segment.position.set(offsetX, 0.055, z);
+
+      const h = this.getWorldHeight(world.x, world.z);
+
+      // Create a small segment. Since it's short (3m), we can keep it flat but tilted?
+      // Or just flat at the sampled height. 3m on a hill might clip if flat.
+      // Better: 2 segments for 3m? Or just 1 segment but placed accurately.
+      // Let's use 1 segment but modify Z (height) of vertices like we did for solid line.
+
+      const geo = new THREE.PlaneGeometry(0.18, dashLength, 1, 2);
+      const pos = geo.attributes.position;
+
+      for (let k = 0; k < pos.count; k++) {
+        const lx = pos.getX(k);
+        const ly = pos.getY(k); // -1.5 .. 1.5
+
+        const effectiveZ = z + ly; // z is center of dash
+        const effectiveX = offsetX + lx;
+
+        const wx = roadX + effectiveX * c + effectiveZ * s;
+        const wz = roadZ + (-effectiveX * s + effectiveZ * c);
+
+        let vH = this.getWorldHeight(wx, wz);
+        const isBridge = (Math.abs(wx - (-70)) < 6 && Math.abs(wz - (-40)) < 16);
+        vH += 0.055;
+
+        pos.setX(k, effectiveX);
+        pos.setY(k, effectiveZ); // Local Z before rotation
+        pos.setZ(k, vH);
+      }
+
+      const segment = new THREE.Mesh(geo, material);
       segment.rotation.x = -Math.PI / 2;
       segment.receiveShadow = false;
       group.add(segment);
@@ -1812,6 +1954,7 @@ export class World implements Updatable {
         if (this.isPointInParking(x, z, 2.2)) continue;
         if (this.isPointInAreas(x, z, waters, 2.0)) continue;
         if (this.isPointInAreas(x, z, beaches, 2.0)) continue;
+        if (this.isPointInRiver(x, z, 2.0)) continue;
         if (this.isPointNearBuilding(x, z, 4.5)) continue;
 
         this.addTree(x, z);
@@ -1845,6 +1988,7 @@ export class World implements Updatable {
           if (this.isPointInParking(w.x, w.z, 2.2)) continue;
           if (this.isPointInAreas(w.x, w.z, waters, 1.6)) continue;
           if (this.isPointInAreas(w.x, w.z, beaches, 1.6)) continue;
+          if (this.isPointInRiver(w.x, w.z, 2.0)) continue;
           // Не ставим прямо в стену: держим небольшой зазор от фасада.
           if (this.isPointNearBuilding(w.x, w.z, 1.2)) continue;
           this.addTree(w.x, w.z);
@@ -1862,6 +2006,7 @@ export class World implements Updatable {
         if (this.isPointInParking(wx, wz, 2.2)) return;
         if (this.isPointInAreas(wx, wz, waters, 1.6)) return;
         if (this.isPointInAreas(wx, wz, beaches, 1.6)) return;
+        if (this.isPointInRiver(wx, wz, 2.0)) return;
         if (this.isPointNearBuilding(wx, wz, 2.2)) return;
         this.addTree(wx, wz);
       };
