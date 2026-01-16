@@ -9,6 +9,9 @@ export class Input {
   private enterQueued = false;
   private exitButton: HTMLButtonElement | null = null;
 
+  private runButton: HTMLButtonElement | null = null;
+  private jumpButton: HTMLButtonElement | null = null;
+
   constructor(uiLayer: HTMLElement) {
     this.joystick = new VirtualJoystick(uiLayer);
     this.createTouchButtons(uiLayer);
@@ -16,9 +19,16 @@ export class Input {
     window.addEventListener("keyup", this.onKeyUp);
   }
 
+  setDriving(isDriving: boolean) {
+    if (this.runButton) this.runButton.style.display = isDriving ? "none" : "";
+    if (this.jumpButton) this.jumpButton.style.display = isDriving ? "none" : "";
+    this.setExitVisible(isDriving);
+  }
+
   getMoveVector() {
     let x = 0;
     let z = 0;
+    // ... existing keyboard logic ...
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) z += 1;
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) z -= 1;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) x -= 1;
@@ -32,8 +42,7 @@ export class Input {
     const joy = this.joystick.getVector();
     const joyLen = Math.hypot(joy.x, joy.y);
     if (joyLen > 0.05) {
-      // Apply sensitivity curve to steering (X) to make driving straight easier on mobile
-      // Using cubic function (x³) or x*abs(x) softens the center response.
+      // Apply sensitivity curve to steering (X)
       const steering = joy.x * Math.abs(joy.x);
       return { x: steering, z: -joy.y };
     }
@@ -82,11 +91,13 @@ export class Input {
     run.className = "action-button";
     run.type = "button";
     run.textContent = "БЕГ";
+    this.runButton = run;
 
     const jump = document.createElement("button");
     jump.className = "action-button";
     jump.type = "button";
     jump.textContent = "ПРЫЖОК";
+    this.jumpButton = jump;
 
     const exit = document.createElement("button");
     exit.className = "action-button";

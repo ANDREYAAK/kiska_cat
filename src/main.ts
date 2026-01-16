@@ -193,6 +193,7 @@ engine.addUpdatable(world, {
         spawnExhaustSmoke(drivingCar, drivingYaw);
       }
       input.setExitVisible(true);
+      input.setDriving(true);
     }
 
     const move = input.getMoveVector();
@@ -217,7 +218,7 @@ engine.addUpdatable(world, {
       isDriving = false;
       drivingCar = null;
       player.object.visible = true;
-      input.setExitVisible(false);
+      input.setDriving(false);
       cameraController.setTarget(player.object);
       if (parked) {
         const yaw = parked.rotation.y;
