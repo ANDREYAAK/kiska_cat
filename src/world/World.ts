@@ -101,6 +101,7 @@ export class World implements Updatable {
   private birdsTime = 0;
 
   private readonly intersections = this.computeIntersections();
+  private readonly bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 
   private readonly trafficCars: Car[] = [];
   private readonly parkedCars: ParkedCarInfo[] = [];
@@ -206,7 +207,9 @@ export class World implements Updatable {
     this.roofTexture.repeat.set(2, 2);
     this.windowTexture.repeat.set(1, 1);
     this.parkingLayouts = this.computeParkingLayouts();
+    this.parkingLayouts = this.computeParkingLayouts();
     this.intersections = this.computeIntersections();
+    this.bounds = this.computeWorldBounds2D(0); // Use 0 padding for strict bounds or adjusting later
 
     this.buildSky();
     // Removed duplicate calls
@@ -2460,6 +2463,12 @@ export class World implements Updatable {
       pushFromObject(car.object, 2.2);
     }
 
+    // --- Boundary Clamping ---
+    if (this.bounds) {
+      resolved.x = Math.max(this.bounds.minX, Math.min(this.bounds.maxX, resolved.x));
+      resolved.z = Math.max(this.bounds.minZ, Math.min(this.bounds.maxZ, resolved.z));
+    }
+
     return resolved;
   }
 
@@ -2485,6 +2494,12 @@ export class World implements Updatable {
     }
     for (const car of this.trafficCars) {
       pushFromObject(car.object, 2.2);
+    }
+
+    // --- Boundary Clamping ---
+    if (this.bounds) {
+      resolved.x = Math.max(this.bounds.minX, Math.min(this.bounds.maxX, resolved.x));
+      resolved.z = Math.max(this.bounds.minZ, Math.min(this.bounds.maxZ, resolved.z));
     }
 
     return resolved;
