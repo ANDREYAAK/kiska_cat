@@ -26,6 +26,10 @@ export class Hud {
     this.element.innerHTML = `
       <div class="ui-top">
         <div class="logo">MTS City</div>
+        <div class="ui-info-panel">
+            <div class="ui-candies" data-role="candies">🍭 0</div>
+            <div class="ui-quest" data-role="quest">Загрузка...</div>
+        </div>
       </div>
       <div class="ui-buttons">
         <button class="ui-button" type="button" data-action="toggle-help">≡</button>
@@ -43,6 +47,28 @@ export class Hud {
         <canvas data-role="minimap-canvas"></canvas>
       </div>
     `;
+
+    // Inline styles for new panel
+    const style = document.createElement("style");
+    style.textContent = `
+      .ui-info-panel {
+        display: flex;
+        flex-direction: column;
+        margin-left: 20px;
+        color: white;
+        text-shadow: 1px 1px 2px black;
+      }
+      .ui-candies {
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .ui-quest {
+        font-size: 14px;
+        opacity: 0.9;
+        margin-top: 4px;
+      }
+    `;
+    this.element.appendChild(style);
 
     // Debug Version Label (Moved after innerHTML to avoid overwrite)
     const ver = document.createElement("div");
@@ -204,6 +230,16 @@ export class Hud {
     // При смене режима размер карты меняется — переинициализируем слой.
     this.lastCanvasW = 0;
     this.lastCanvasH = 0;
+  }
+
+  updateCandyCount(count: number) {
+    const el = this.element.querySelector('[data-role="candies"]');
+    if (el) el.textContent = `🍭 ${count}`;
+  }
+
+  setQuestMessage(msg: string) {
+    const el = this.element.querySelector('[data-role="quest"]');
+    if (el) el.textContent = msg;
   }
 
   private toggleHelp() {
