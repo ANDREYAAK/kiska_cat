@@ -149,5 +149,14 @@ export const WORLD_CONFIG = {
     { buildingIndex: 2, spots: 2 },
     { buildingIndex: 3, spots: 2 },
     { buildingIndex: 4, spots: 2 }
-  ] as { buildingIndex: number; spots: number }[]
+  ] as { buildingIndex: number; spots: number }[],
+
+  billboards: [
+    {
+      position: { x: -38, z: 88 }, // Near MTS Bank (-40, 102), slightly offset
+      rotation: -Math.PI / 2, // Facing the road
+      size: { x: 8, y: 5 },
+      text: "Персик, вам одобрено\n500 000 рублей,\nзаезжайте в МТС Банк\nи оформляйте заявку"
+    }
+  ] as { position: { x: number; z: number }; rotation: number; size: { x: number; y: number }; text: string }[]
 };

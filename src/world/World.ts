@@ -3,7 +3,7 @@ import { WORLD_CONFIG } from "@config/world";
 import { GAME_CONFIG } from "@config/game";
 import { BUILDING_LAYOUT, createBuilding } from "@entities/Building";
 import { Car } from "@entities/Car";
-import { createProceduralTexture } from "@utils/textures";
+import { createProceduralTexture, createLicensePlateTexture, createBillboardTexture } from "@utils/textures";
 import type { Updatable } from "@core/Engine";
 
 type TrafficDirection = "NS" | "EW";
@@ -2509,6 +2509,74 @@ export class World implements Updatable {
     if (label === "МТС SHOP" && this.mtsShopDoor) return this.mtsShopDoor;
     const door = this.doors.find((d) => d.label === label);
     return door?.position;
+  }
+
+  // Assuming this is part of a constructor or initialization method
+  // where generateLamps is also called.
+  // If this is not a constructor, please provide the full class context.
+  constructor() {
+    // ... other constructor logic ...
+    this.generateLamps();
+    this.generateBillboards();
+    // ... other constructor logic ...
+  }
+
+  private generateBillboards() {
+    const geo = new THREE.BoxGeometry(1, 1, 0.2); // Base unit box
+    const poleMat = new THREE.MeshStandardMaterial({ color: "#555555", roughness: 0.7 });
+
+    // Config doesn't exist on type yet, but we just added it to the file.
+    // We'll cast to any for now to avoid TS error until types are updated or restart.
+    const billboards = (WORLD_CONFIG as any).billboards || [];
+
+    for (const b of billboards) {
+      const group = new THREE.Group();
+      group.position.set(b.position.x, 0, b.position.z);
+      group.rotation.y = b.rotation;
+
+      const w = b.size.x;
+      const h = b.size.y;
+      const poleH = 4.0; // Height from ground to bottom of board
+
+      // Poles
+      const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, poleH + h / 2, 8);
+      const leftPole = new THREE.Mesh(poleGeo, poleMat);
+      leftPole.position.set(-w * 0.3, (poleH + h / 2) / 2, 0);
+      leftPole.castShadow = true;
+
+      const rightPole = new THREE.Mesh(poleGeo, poleMat);
+      rightPole.position.set(w * 0.3, (poleH + h / 2) / 2, 0);
+      rightPole.castShadow = true;
+
+      group.add(leftPole, rightPole);
+
+      // Board
+      const tex = createBillboardTexture(b.text);
+      const materials = [
+        new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Right
+        new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Left
+        new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Top
+        new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Bottom
+        new THREE.MeshStandardMaterial({ map: tex }),         // Front
+        new THREE.MeshStandardMaterial({ color: "#cccccc" }), // Back
+      ];
+      const board = new THREE.Mesh(geo, materials);
+      board.scale.set(w, h, 1);
+      board.position.y = poleH + h / 2;
+      board.castShadow = true;
+      group.add(board);
+
+      this.group.add(group);
+
+      // Collider (Approximation)
+      const collider = new THREE.Mesh(
+        new THREE.BoxGeometry(w, poleH, 1),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      collider.position.set(b.position.x, poleH / 2, b.position.z);
+      collider.rotation.y = b.rotation;
+      this.colliders.push(collider);
+    }
   }
 
   getParkedCarObjects() {
