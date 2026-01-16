@@ -15,67 +15,63 @@ export class Candy {
         this.mesh = new THREE.Group();
         this.mesh.position.set(position.x, baseHeight, position.z);
 
-        // create a striped texture
-        const canvas = document.createElement("canvas");
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-            ctx.fillStyle = "#ff0000";
-            ctx.fillRect(0, 0, 64, 64);
-            ctx.fillStyle = "#ffffff";
-            // Draw diagonal stripes
-            for (let i = -64; i < 128; i += 16) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i + 16, 0);
-                ctx.lineTo(i - 16 + 64, 64);
-                ctx.lineTo(i - 32 + 64, 64);
-                ctx.closePath();
-                ctx.fill();
-            }
-        }
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-
-        // Wrapper/Body
-        const wrapperGeo = new THREE.SphereGeometry(0.25, 16, 16);
+        // 1. Candy Body (Sphere)
+        const wrapperGeo = new THREE.SphereGeometry(0.22, 16, 16);
+        const color = Math.random() < 0.5 ? 0xff0000 : 0xffcc00; // Red or Gold
         const wrapperMat = new THREE.MeshStandardMaterial({
-            map: texture,
+            color: color,
             roughness: 0.3,
-            metalness: 0.1,
-            emissive: "#aa0000",
+            metalness: 0.2,
+            emissive: 0x330000,
             emissiveIntensity: 0.1
         });
         const wrapper = new THREE.Mesh(wrapperGeo, wrapperMat);
-        wrapper.rotation.z = Math.PI / 4; // Tilt texture
         this.mesh.add(wrapper);
 
-        // "Wings" (Pyramids pointing out)
-        const wingGeo = new THREE.ConeGeometry(0.18, 0.35, 8, 1, true);
-        const wingMat = new THREE.MeshStandardMaterial({
-            color: "#ffffff",
-            roughness: 0.4,
+        // 2. Wrapper Wings (Flares)
+        // usage: CylinderGeometry(radiusTop, radiusBottom, height, ...)
+        // We want a cone that starts small (pinch) and gets distinctively wider (flare)
+        // radiusTop = 0.02 (pinch), radiusBottom = 0.15 (flare), height = 0.25
+        const flareGeo = new THREE.CylinderGeometry(0.04, 0.18, 0.3, 8, 1, true);
+        const flareMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.5,
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.9
         });
 
-        const leftWing = new THREE.Mesh(wingGeo, wingMat);
-        leftWing.position.set(-0.35, 0, 0);
+        // Left Wing
+        const leftWing = new THREE.Mesh(flareGeo, flareMat);
+        // Cylinder is vertical (Y). We want it along X.
+        // Rotation Z: Math.PI / 2 puts top at -X, bottom at +X.
+        // We want pinch (Top) near center (0), Flare (Bottom) to left (-X).
+        // So we want Top pointing +X ??
+        // Let's rotate -pi/2? Top at +X?
+        // Let's just rotate Z 90 deg (PI/2).
+        // Cylinder Y+ becomes X-. Top is at X-0.15, Bottom at X+0.15.
+        // We want "Pinch" (Top) at X near 0. "Flare" (Bottom) at X near -0.3.
+        // So we want Top to point closer to origin.
         leftWing.rotation.z = Math.PI / 2;
+        leftWing.position.set(-0.35, 0, 0);
         this.mesh.add(leftWing);
 
-        const rightWing = new THREE.Mesh(wingGeo, wingMat);
-        rightWing.position.set(0.35, 0, 0);
+        // Right Wing
+        const rightWing = new THREE.Mesh(flareGeo, flareMat);
+        // We want Pinch (Top) near 0, Flare (Bottom) at +X.
+        // Rotate Z -90 deg (-PI/2). Cylinder Y+ becomes X+.
+        // Top is at X+, Bottom at X-.
+        // Wait. Cylinder origin is center of height.
+        // If we want Top (Pinch) to be "left" relative to the wing center (towards Origin),
+        // and Bottom (Flare) to be "right" (away).
         rightWing.rotation.z = -Math.PI / 2;
+        rightWing.position.set(0.35, 0, 0);
         this.mesh.add(rightWing);
     }
 
     update(dt: number, time: number) {
         if (!this.active) return;
-        this.mesh.rotation.y += dt;
+        this.mesh.rotation.y += dt * 1.5;
         this.mesh.position.y = this.baseHeight + Math.sin(time * this.floatSpeed + this.floatOffset) * 0.15;
     }
 }

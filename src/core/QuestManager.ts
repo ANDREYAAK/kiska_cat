@@ -25,10 +25,17 @@ export class QuestManager {
             label: "Идите в MTS SHOP",
             targetMissions: ["MTS SHOP"],
             pathPoints: [
-                new THREE.Vector3(-40, 0, 96), // Bank Door (Z=102 - 10/2 - offset)
-                new THREE.Vector3(-40, 0, 70), // Walk straight to Main Road (Z=70)
-                new THREE.Vector3(-56, 0, 70), // Walk along road to match MTS Shop X (-52.5 - 4)
-                new THREE.Vector3(-56, 0, 26)  // Walk straight to MTS Shop Door (approx)
+                new THREE.Vector3(-40, 0, 107), // !!! START: Bank Door
+                new THREE.Vector3(-40, 0, 70),  // Go straight North to Road (Trading St, Z=70)
+                new THREE.Vector3(-52, 0, 70),  // Go West along Road to intersection with Shop Logic
+                new THREE.Vector3(-52, 0, 21)   // Go South straight to SHOP Door
+                // Note: Shop is at Z=26, size Z=8. Z range [22, 30]. Door usually at front (-Z or +Z?).
+                // Config says rot -PI/2.
+                // Building size x=10, z=8.
+                // If rot -PI/2, Local X is World Z. Local Z is World -X.
+                // Door is typically at local Z+. So World -X side.
+                // Wait, let's just trace to the "front" visually.
+                // Z=21 is "in front" if Z grows South.
             ]
         },
         {
@@ -36,10 +43,11 @@ export class QuestManager {
             label: "Идите в МЕДСИ",
             targetMissions: ["МЕДСИ"],
             pathPoints: [
-                new THREE.Vector3(-56, 0, 26), // Start at MTS Shop Door
-                new THREE.Vector3(-56, 0, 70), // Back to road
-                new THREE.Vector3(-102, 0, 70), // Along road to match Medsi X (-96 - 6)
-                new THREE.Vector3(-102, 0, 26)  // Medsi Door
+                new THREE.Vector3(-52, 0, 21),  // Start at Shop
+                new THREE.Vector3(-52, 0, 70),  // Back to Road
+                new THREE.Vector3(-96, 0, 70),  // Along Road West
+                new THREE.Vector3(-96, 0, 21)   // To MEDSI Door 
+                // Medsi pos: x=-96, z=26. Size z=12. Half=6. Front at 20? 
             ]
         }
     ];
@@ -48,7 +56,7 @@ export class QuestManager {
         this.group = sceneGroup;
         this.hud = hud;
 
-        // Marker
+        // Marker - big arrow
         const markerGeo = new THREE.ConeGeometry(0.5, 1.5, 16);
         const markerMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.8 });
         this.targetMarker = new THREE.Mesh(markerGeo, markerMat);
@@ -84,12 +92,13 @@ export class QuestManager {
             const a = points[i];
             const b = points[i + 1];
             const dist = a.distanceTo(b);
-            const count = Math.ceil(dist / 3.0); // Candy every 3 meters
+            const count = Math.ceil(dist / 2.5); // Closer candies (2.5m)
 
             for (let j = 0; j < count; j++) {
                 const t = j / count;
                 const pos = new THREE.Vector3().lerpVectors(a, b, t);
-                // Skip if too close to last point (node overlap) except start
+
+                // Avoid duplicate on corners
                 if (i > 0 && j === 0) continue;
 
                 const candy = new Candy({ x: pos.x, z: pos.z });
@@ -126,13 +135,12 @@ export class QuestManager {
             // Collision
             const dx = playerPos.x - candy.mesh.position.x;
             const dz = playerPos.z - candy.mesh.position.z;
-            if (dx * dx + dz * dz < 1.0) { // 1m radius
+            if (dx * dx + dz * dz < 1.44) { // 1.2m radius (generous)
                 // Collect
                 this.balance++;
                 this.hud.updateCandyCount(this.balance);
                 this.group.remove(candy.mesh);
                 this.candies.splice(i, 1);
-                // Optional: play sound
             }
         }
     }
@@ -142,14 +150,20 @@ export class QuestManager {
         if (!quest) return;
 
         if (quest.targetMissions.includes(buildingLabel)) {
-            // Quest Complete!
+            // Quest Complete Logic
             this.currentQuestIndex++;
+
+            // Show success message immediately
+            this.hud.showMessage(`Задание "${quest.label}" выполнено!`);
+
             if (this.currentQuestIndex < this.quests.length) {
+                // Start next quest with a slight delay or immediately? Immediately is better for flow.
                 this.startQuest(this.currentQuestIndex);
             } else {
                 this.hud.setQuestMessage("Все задания выполнены!");
                 this.targetMarker.visible = false;
                 this.clearCandies();
+                this.hud.showMessage("Поздравляем! Вы прошли все квесты!");
             }
         }
     }
