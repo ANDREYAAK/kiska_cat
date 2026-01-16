@@ -37,13 +37,23 @@ const startMusic = async () => {
       hud.showMessage("Music: Resuming...", { durationMs: 1000 });
       const success = await audioManager.play();
       if (success) {
-        hud.showMessage("Music: Success!", { durationMs: 2000 });
+        hud.showMessage("Music: Playing!", { durationMs: 2000 });
         document.removeEventListener("click", startMusic, true);
         document.removeEventListener("keydown", startMusic, true);
         document.removeEventListener("touchstart", startMusic, true);
         document.removeEventListener("pointerdown", startMusic, true);
       } else {
-        hud.showMessage("Music: Context Access Failed", { durationMs: 2000 });
+        // Autoplay failed, show manual button
+        hud.showMessage("Tap button to play music", { durationMs: 3000 });
+        document.removeEventListener("click", startMusic, true);
+        document.removeEventListener("keydown", startMusic, true);
+        document.removeEventListener("touchstart", startMusic, true);
+        document.removeEventListener("pointerdown", startMusic, true);
+
+        hud.showPlayMusicButton(async () => {
+          await audioManager.play();
+          hud.showMessage("Music: Playing!", { durationMs: 2000 });
+        });
       }
     } catch (e) {
       hud.showMessage("Music Error: " + e, { durationMs: 3000 });
@@ -288,8 +298,8 @@ engine.addUpdatable(world, {
       // 2. Steering Logic
       // Steering should be direct but smooth. 
       const currentSteer = drivingCar.userData.currentSteer ?? 0;
-      const steerLerpSpeed = 1.5; // VERY smooth/lazy for mobile
-      const maxSteerAngle = 0.4; // ~23 degrees, prevents sharp jerks
+      const steerLerpSpeed = 4.0; // Responsive (was 1.5)
+      const maxSteerAngle = 0.6; // ~35 degrees (was 0.4)
 
       const targetSteerAngle = steerInput * maxSteerAngle;
       const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteerAngle, steerLerpSpeed * dt);

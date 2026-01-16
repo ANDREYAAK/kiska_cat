@@ -52,7 +52,7 @@ export class Hud {
     ver.style.color = "lime";
     ver.style.fontSize = "12px";
     ver.style.zIndex = "999";
-    ver.textContent = "v0.2.6 (Mobile Tune)";
+    ver.textContent = "v0.2.7 (Responsive)";
     this.element.appendChild(ver);
 
     container.appendChild(this.element);
@@ -152,6 +152,28 @@ export class Hud {
       }
     }
     this.promoEl.classList.add("visible");
+  }
+
+  showPlayMusicButton(onClick: () => void) {
+    const btn = document.createElement("button");
+    btn.textContent = "ВКЛЮЧИТЬ МУЗЫКУ";
+    btn.style.position = "absolute";
+    btn.style.top = "60px";
+    btn.style.right = "24px";
+    btn.style.zIndex = "1000";
+    btn.style.padding = "10px 20px";
+    btn.style.background = "#e30611";
+    btn.style.color = "white";
+    btn.style.border = "none";
+    btn.style.borderRadius = "8px";
+    btn.style.fontWeight = "bold";
+    btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      onClick();
+      btn.remove();
+    };
+    this.element.appendChild(btn);
   }
 
   hidePromo() {
