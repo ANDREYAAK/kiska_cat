@@ -15,27 +15,60 @@ export class Candy {
         this.mesh = new THREE.Group();
         this.mesh.position.set(position.x, baseHeight, position.z);
 
-        // Wrapper
-        const wrapperGeo = new THREE.SphereGeometry(0.2, 8, 8);
+        // create a striped texture
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.fillStyle = "#ff0000";
+            ctx.fillRect(0, 0, 64, 64);
+            ctx.fillStyle = "#ffffff";
+            // Draw diagonal stripes
+            for (let i = -64; i < 128; i += 16) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i + 16, 0);
+                ctx.lineTo(i - 16 + 64, 64);
+                ctx.lineTo(i - 32 + 64, 64);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+
+        // Wrapper/Body
+        const wrapperGeo = new THREE.SphereGeometry(0.25, 16, 16);
         const wrapperMat = new THREE.MeshStandardMaterial({
-            color: Math.random() < 0.5 ? "#ff0000" : "#ffcc00",
-            roughness: 0.4,
+            map: texture,
+            roughness: 0.3,
             metalness: 0.1,
-            emissive: "#330000",
-            emissiveIntensity: 0.2
+            emissive: "#aa0000",
+            emissiveIntensity: 0.1
         });
         const wrapper = new THREE.Mesh(wrapperGeo, wrapperMat);
+        wrapper.rotation.z = Math.PI / 4; // Tilt texture
         this.mesh.add(wrapper);
 
-        // "Wings" of the candy wrapper
-        const wingGeo = new THREE.ConeGeometry(0.15, 0.3, 8);
-        const leftWing = new THREE.Mesh(wingGeo, wrapperMat);
-        leftWing.position.set(-0.25, 0, 0);
+        // "Wings" (Pyramids pointing out)
+        const wingGeo = new THREE.ConeGeometry(0.18, 0.35, 8, 1, true);
+        const wingMat = new THREE.MeshStandardMaterial({
+            color: "#ffffff",
+            roughness: 0.4,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9
+        });
+
+        const leftWing = new THREE.Mesh(wingGeo, wingMat);
+        leftWing.position.set(-0.35, 0, 0);
         leftWing.rotation.z = Math.PI / 2;
         this.mesh.add(leftWing);
 
-        const rightWing = new THREE.Mesh(wingGeo, wrapperMat);
-        rightWing.position.set(0.25, 0, 0);
+        const rightWing = new THREE.Mesh(wingGeo, wingMat);
+        rightWing.position.set(0.35, 0, 0);
         rightWing.rotation.z = -Math.PI / 2;
         this.mesh.add(rightWing);
     }
