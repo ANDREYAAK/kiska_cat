@@ -2552,7 +2552,7 @@ export class World implements Updatable {
         new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Top
         new THREE.MeshStandardMaterial({ color: "#dddddd" }), // Bottom
         new THREE.MeshStandardMaterial({ map: tex }),         // Front
-        new THREE.MeshStandardMaterial({ color: "#cccccc" }), // Back
+        new THREE.MeshStandardMaterial({ map: tex }),         // Back (Double-sided)
       ];
       const board = new THREE.Mesh(geo, materials);
       board.scale.set(w, h, 1);
