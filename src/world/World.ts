@@ -2534,11 +2534,12 @@ export class World implements Updatable {
       // Poles
       const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, poleH + h / 2, 8);
       const leftPole = new THREE.Mesh(poleGeo, poleMat);
-      leftPole.position.set(-w * 0.3, (poleH + h / 2) / 2, 0);
+      // Move poles slightly behind (z = -0.15) to avoid overlapping the front face
+      leftPole.position.set(-w * 0.3, (poleH + h / 2) / 2, -0.15);
       leftPole.castShadow = true;
 
       const rightPole = new THREE.Mesh(poleGeo, poleMat);
-      rightPole.position.set(w * 0.3, (poleH + h / 2) / 2, 0);
+      rightPole.position.set(w * 0.3, (poleH + h / 2) / 2, -0.15);
       rightPole.castShadow = true;
 
       group.add(leftPole, rightPole);

@@ -153,9 +153,9 @@ export const WORLD_CONFIG = {
 
   billboards: [
     {
-      position: { x: -38, z: 88 }, // Near MTS Bank (-40, 102), slightly offset
-      rotation: -Math.PI / 2, // Facing the road
-      size: { x: 8, y: 5 },
+      position: { x: -40, z: 78 }, // Closer to road (road at z=70, width=10 -> edge at 75)
+      rotation: Math.PI, // Facing the road (North)
+      size: { x: 5, y: 3 }, // Smaller size
       text: "Персик, вам одобрено\n500 000 рублей,\nзаезжайте в МТС Банк\nи оформляйте заявку"
     }
   ] as { position: { x: number; z: number }; rotation: number; size: { x: number; y: number }; text: string }[]
