@@ -2531,18 +2531,13 @@ export class World implements Updatable {
       const h = b.size.y;
       const poleH = 4.0; // Height from ground to bottom of board
 
-      // Poles - make them thinner so they fit INSIDE the double-sided board without clipping text
-      const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, poleH + h / 2, 8);
-      const leftPole = new THREE.Mesh(poleGeo, poleMat);
-      // Center poles (z=0) but move to edges
-      leftPole.position.set(-w * 0.45, (poleH + h / 2) / 2, 0);
-      leftPole.castShadow = true;
+      // Pole - Single central pole
+      const poleGeo = new THREE.CylinderGeometry(0.25, 0.25, poleH + h / 2, 8);
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(0, (poleH + h / 2) / 2, 0);
+      pole.castShadow = true;
 
-      const rightPole = new THREE.Mesh(poleGeo, poleMat);
-      rightPole.position.set(w * 0.45, (poleH + h / 2) / 2, 0);
-      rightPole.castShadow = true;
-
-      group.add(leftPole, rightPole);
+      group.add(pole);
 
       // Board
       const tex = createBillboardTexture(b.text);
