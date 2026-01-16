@@ -39,38 +39,27 @@ export class Candy {
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.9
-        });
-
         // Left Wing
         const leftWing = new THREE.Mesh(flareGeo, flareMat);
-        // Cylinder is vertical (Y). We want it along X.
-        // Rotation Z: Math.PI / 2 puts top at -X, bottom at +X.
-        // We want pinch (Top) near center (0), Flare (Bottom) to left (-X).
-        // So we want Top pointing +X ??
-        // Let's rotate -pi/2? Top at +X?
-        // Let's just rotate Z 90 deg (PI/2).
-        // Cylinder Y+ becomes X-. Top is at X-0.15, Bottom at X+0.15.
-        // We want "Pinch" (Top) at X near 0. "Flare" (Bottom) at X near -0.3.
-        // So we want Top to point closer to origin.
-        leftWing.rotation.z = Math.PI / 2;
-        leftWing.position.set(-0.35, 0, 0);
-        this.mesh.add(leftWing);
+            // We want the "Pointy" (Top, radius 0.04) to face the Sphere (Center, 0,0,0).
+            // Wing is at -0.35. We want Top to point +X (Right).
+            // Default Cone/Cylinder Y+ is Top.
+            // Roate Z -90 (-PI/2) -> Y+ becomes X+.
+            leftWing.rotation.z = -Math.PI / 2;
+            leftWing.position.set(-0.35, 0, 0);
+            this.mesh.add(leftWing);
 
-        // Right Wing
-        const rightWing = new THREE.Mesh(flareGeo, flareMat);
-        // We want Pinch (Top) near 0, Flare (Bottom) at +X.
-        // Rotate Z -90 deg (-PI/2). Cylinder Y+ becomes X+.
-        // Top is at X+, Bottom at X-.
-        // Wait. Cylinder origin is center of height.
-        // If we want Top (Pinch) to be "left" relative to the wing center (towards Origin),
-        // and Bottom (Flare) to be "right" (away).
-        rightWing.rotation.z = -Math.PI / 2;
-        rightWing.position.set(0.35, 0, 0);
-        this.mesh.add(rightWing);
-    }
+            // Right Wing
+            const rightWing = new THREE.Mesh(flareGeo, flareMat);
+            // Wing is at +0.35. We want Top to point -X (Left).
+            // Rotate Z +90 (+PI/2) -> Y+ becomes X-.
+            rightWing.rotation.z = Math.PI / 2;
+            rightWing.position.set(0.35, 0, 0);
+            this.mesh.add(rightWing);
+        }
 
     update(dt: number, time: number) {
-        if (!this.active) return;
+            if(!this.active) return;
         this.mesh.rotation.y += dt * 1.5;
         this.mesh.position.y = this.baseHeight + Math.sin(time * this.floatSpeed + this.floatOffset) * 0.15;
     }
