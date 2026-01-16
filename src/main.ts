@@ -229,38 +229,41 @@ engine.addUpdatable(world, {
     }
 
     // Обновляем дым
+    if (drivingCar.userData.carInstance) {
+      const pwr = Math.abs(currentSpeed / maxSpeed);
+      drivingCar.userData.carInstance.updateSmoke(dt, pwr);
+    }
   }
-}
 
     // Столкновения с домами/деревьями/машинами
-    if (!isDriving) {
-  const resolved = world.resolvePlayerMovement(player.object.position, 0.9);
-  player.object.position.x = resolved.x;
-  player.object.position.z = resolved.z;
-} else if (drivingCar) {
-  const resolved = world.resolveCarMovement(drivingCar.position, carCollisionRadius, drivingCar);
-  drivingCar.position.x = resolved.x;
-  drivingCar.position.z = resolved.z;
-  // Адаптируем высоту машины под рельеф/мост
-  const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
-  drivingCar.position.y = h + 0.22;
-}
+    if(!isDriving) {
+    const resolved = world.resolvePlayerMovement(player.object.position, 0.9);
+    player.object.position.x = resolved.x;
+    player.object.position.z = resolved.z;
+  } else if(drivingCar) {
+    const resolved = world.resolveCarMovement(drivingCar.position, carCollisionRadius, drivingCar);
+    drivingCar.position.x = resolved.x;
+    drivingCar.position.z = resolved.z;
+    // Адаптируем высоту машины под рельеф/мост
+    const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+    drivingCar.position.y = h + 0.22;
+  }
 // Адаптируем высоту машины под рельеф/мост
-if (drivingCar) {
-  const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
-  drivingCar.position.y = h + 0.22;
-}
+if(drivingCar) {
+    const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+    drivingCar.position.y = h + 0.22;
+  }
 
 // Анимация дверей
-if (!isDriving) {
-  world.updateDoors(dt, player.object.position);
-  world.updateParkedCarDoors(dt, player.object.position, enterCarRadius, enterCarRadius + 0.6);
-} else {
-  world.closeAllParkedCarDoors(dt);
-}
+if(!isDriving) {
+    world.updateDoors(dt, player.object.position);
+    world.updateParkedCarDoors(dt, player.object.position, enterCarRadius, enterCarRadius + 0.6);
+  } else {
+    world.closeAllParkedCarDoors(dt);
+  }
 
 // Небольшой дымок при посадке (затухает сам)
-if (smokePuffs.length > 0) {
+if(smokePuffs.length > 0) {
   for (let i = smokePuffs.length - 1; i >= 0; i -= 1) {
     const puff = smokePuffs[i]!;
     puff.life += dt;
@@ -358,6 +361,6 @@ if (isDriving && drivingCar) {
   hud.updateMinimap({ x: player.object.position.x, z: player.object.position.z, yaw: player.object.rotation.y });
 }
   }
-});
+}});
 
 engine.start();
