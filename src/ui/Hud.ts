@@ -52,7 +52,7 @@ export class Hud {
     ver.style.color = "lime";
     ver.style.fontSize = "12px";
     ver.style.zIndex = "999";
-    ver.textContent = "v0.2.3 (Fix)";
+    ver.textContent = "v0.2.4 (Debug Audio)";
     this.element.appendChild(ver);
 
     container.appendChild(this.element);

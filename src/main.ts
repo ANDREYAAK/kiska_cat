@@ -34,16 +34,19 @@ hud.onMusicToggle(() => {
 const startMusic = async () => {
   if (audioManager.isEnabled()) {
     try {
+      hud.showMessage("Music: Resuming...", { durationMs: 1000 });
       const success = await audioManager.play();
       if (success) {
-        // Only remove listeners if playback actually started (context resumed)
+        hud.showMessage("Music: Success!", { durationMs: 2000 });
         document.removeEventListener("click", startMusic, true);
         document.removeEventListener("keydown", startMusic, true);
         document.removeEventListener("touchstart", startMusic, true);
         document.removeEventListener("pointerdown", startMusic, true);
+      } else {
+        hud.showMessage("Music: Context Access Failed", { durationMs: 2000 });
       }
     } catch (e) {
-      // Failed (e.g. browser blocked it), keep listeners to try again on next interaction
+      hud.showMessage("Music Error: " + e, { durationMs: 3000 });
     }
   }
 };
@@ -261,13 +264,18 @@ engine.addUpdatable(world, {
         // Simplest: use a local static-like or module variable if single player.
         // Or store on car userdata.
         const currentSteer = drivingCar.userData.currentSteer ?? 0;
-        const steerLerpSpeed = 4.0; // Adjustable smoothness
+        // Make it even smoother (lower = smoother/slower reaction)
+        const steerLerpSpeed = 2.0;
         const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteer, steerLerpSpeed * dt);
         drivingCar.userData.currentSteer = newSteer;
 
         const speed = drivingSpeed * (sprint ? drivingSprintMultiplier : 1);
         const steerScale = Math.max(0.2, Math.abs(throttle));
+        // Reduce max turn speed to prevent spinning out
         drivingYaw += newSteer * carTurnSpeed * steerScale * dt;
+
+        // Debug output (temporary)
+        // if (Math.random() < 0.05) console.log("Steer input:", targetSteer, "Actual:", newSteer);
 
         carForward.set(Math.sin(drivingYaw), 0, Math.cos(drivingYaw));
         carMove.copy(carForward).multiplyScalar(speed * throttle * dt);
