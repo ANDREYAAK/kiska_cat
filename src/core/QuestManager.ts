@@ -25,10 +25,10 @@ export class QuestManager {
             label: "Идите в MTS SHOP",
             targetMissions: ["MTS SHOP"],
             pathPoints: [
-                new THREE.Vector3(-40, 0, 96), // Bank Door
-                new THREE.Vector3(-40, 0, 70), // Sidewalk -> Road intersection (Trading St)
-                new THREE.Vector3(-52, 0, 70), // Road intersection (turn to shop)
-                new THREE.Vector3(-52, 0, 32)  // MTS Shop Door (approx)
+                new THREE.Vector3(-40, 0, 96), // Bank Door (Z=102 - 10/2 - offset)
+                new THREE.Vector3(-40, 0, 70), // Walk straight to Main Road (Z=70)
+                new THREE.Vector3(-56, 0, 70), // Walk along road to match MTS Shop X (-52.5 - 4)
+                new THREE.Vector3(-56, 0, 26)  // Walk straight to MTS Shop Door (approx)
             ]
         },
         {
@@ -36,10 +36,10 @@ export class QuestManager {
             label: "Идите в МЕДСИ",
             targetMissions: ["МЕДСИ"],
             pathPoints: [
-                new THREE.Vector3(-52, 0, 32), // MTS Shop Door
-                new THREE.Vector3(-52, 0, 70), // Back to road
-                new THREE.Vector3(-96, 0, 70), // Along road to MEDSI turn
-                new THREE.Vector3(-96, 0, 32)  // MEDSI Door
+                new THREE.Vector3(-56, 0, 26), // Start at MTS Shop Door
+                new THREE.Vector3(-56, 0, 70), // Back to road
+                new THREE.Vector3(-102, 0, 70), // Along road to match Medsi X (-96 - 6)
+                new THREE.Vector3(-102, 0, 26)  // Medsi Door
             ]
         }
     ];
