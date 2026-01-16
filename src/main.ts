@@ -24,7 +24,7 @@ const player = new Player();
 const promoDismissedByLabel: Record<string, boolean> = {};
 
 // Audio
-const audioManager = new AudioManager("/sounds/music.mp3", 0.4);
+const audioManager = new AudioManager("./sounds/music.mp3", 0.4);
 hud.onMusicToggle(() => {
   const enabled = audioManager.toggle();
   hud.setMusicIcon(enabled);
@@ -37,20 +37,21 @@ const startMusic = async () => {
       const success = await audioManager.play();
       if (success) {
         // Only remove listeners if playback actually started (context resumed)
-        document.removeEventListener("click", startMusic);
-        document.removeEventListener("keydown", startMusic);
-        document.removeEventListener("touchstart", startMusic);
-        document.removeEventListener("pointerdown", startMusic);
+        document.removeEventListener("click", startMusic, true);
+        document.removeEventListener("keydown", startMusic, true);
+        document.removeEventListener("touchstart", startMusic, true);
+        document.removeEventListener("pointerdown", startMusic, true);
       }
     } catch (e) {
       // Failed (e.g. browser blocked it), keep listeners to try again on next interaction
     }
   }
 };
-document.addEventListener("click", startMusic);
-document.addEventListener("keydown", startMusic);
-document.addEventListener("touchstart", startMusic);
-document.addEventListener("pointerdown", startMusic);
+// Use capture=true to catch events before UI stops propagation
+document.addEventListener("click", startMusic, true);
+document.addEventListener("keydown", startMusic, true);
+document.addEventListener("touchstart", startMusic, true);
+document.addEventListener("pointerdown", startMusic, true);
 let activePromoLabel: string | null = null;
 let shownPromoLabel: string | null = null;
 let selectedParkedCar: THREE.Object3D | null = null;
@@ -272,6 +273,11 @@ engine.addUpdatable(world, {
         carMove.copy(carForward).multiplyScalar(speed * throttle * dt);
         drivingCar.position.add(carMove);
         drivingCar.rotation.y = drivingYaw;
+
+        // Auto-follow camera
+        if (length > 0.1) { // Only follow when moving/pressing gas
+          cameraController.updateFollowYaw(drivingYaw, dt);
+        }
       }
 
       // Обновляем дым у машины игрока (ВНЕ проверки на движение, чтобы дымил и на холостых)

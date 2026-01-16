@@ -41,7 +41,7 @@ export class Input {
 
     const joy = this.joystick.getVector();
     const joyLen = Math.hypot(joy.x, joy.y);
-    if (joyLen > 0.05) {
+    if (joyLen > 0.1) {
       // Apply sensitivity curve to steering (X)
       const steering = joy.x * Math.abs(joy.x);
       return { x: steering, z: -joy.y };

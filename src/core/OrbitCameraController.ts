@@ -66,4 +66,43 @@ export class OrbitCameraController {
     this.lastTarget.copy(this.target.position);
     this.controls.update();
   }
+
+  updateFollowYaw(targetYaw: number, dt: number) {
+    // Current angle from target to camera (in XZ plane)
+    const dx = this.camera.position.x - this.controls.target.x;
+    const dz = this.camera.position.z - this.controls.target.z;
+    const currentAng = Math.atan2(dx, dz); // 0 is +Z (camera behind car looking at +Z? No, wait)
+
+    // We want camera to be BEHIND the car. 
+    // If car yaw is 0 (facing +Z), back is -Z? 
+    // Let's assume standard Model: 0 yaw = +Z direction.
+    // Camera behind means camera is at -Z relative to car.
+    // So desired camera angle (vector from target TO camera) should be yaw + PI (backwards).
+
+    // Let's smooth angle. 
+    let desiredAng = targetYaw + Math.PI; // behind
+
+    // Shortest path interpolation for angles
+    let diff = desiredAng - currentAng;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+
+    // Determine how "fast" we are driving (or turning). 
+    // We only want to auto-rotate if difference is significant but not fight user too much.
+    // For now, simple gentle drift.
+    // If user is actively rotating manually, OrbitControls might fight this. 
+    // But since we enable damping, direct property mutation is tricky.
+    // Safest way with OrbitControls is to rotate the camera position around target.
+
+    const factor = 2.0 * dt; // Slow auto-align
+    if (Math.abs(diff) > 0.01) {
+      const newAng = currentAng + diff * factor;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const newX = Math.sin(newAng) * dist;
+      const newZ = Math.cos(newAng) * dist;
+
+      this.camera.position.x = this.controls.target.x + newX;
+      this.camera.position.z = this.controls.target.z + newZ;
+    }
+  }
 }
