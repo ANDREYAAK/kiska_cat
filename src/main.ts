@@ -233,135 +233,133 @@ engine.addUpdatable(world, {
       const pwr = Math.abs(currentSpeed / maxSpeed);
       drivingCar.userData.carInstance.updateSmoke(dt, pwr);
     }
-  }
 
-}
 
     // Столкновения с домами/деревьями/машинами
     if (!isDriving) {
-  const resolved = world.resolvePlayerMovement(player.object.position, 0.9);
-  player.object.position.x = resolved.x;
-  player.object.position.z = resolved.z;
-} else if (drivingCar) {
-  const resolved = world.resolveCarMovement(drivingCar.position, carCollisionRadius, drivingCar);
-  drivingCar.position.x = resolved.x;
-  drivingCar.position.z = resolved.z;
-  // Адаптируем высоту машины под рельеф/мост
-  const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
-  drivingCar.position.y = h + 0.22;
-}
-// Адаптируем высоту машины под рельеф/мост
-if (drivingCar) {
-  const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
-  drivingCar.position.y = h + 0.22;
-}
-
-// Анимация дверей
-if (!isDriving) {
-  world.updateDoors(dt, player.object.position);
-  world.updateParkedCarDoors(dt, player.object.position, enterCarRadius, enterCarRadius + 0.6);
-} else {
-  world.closeAllParkedCarDoors(dt);
-}
-
-// Небольшой дымок при посадке (затухает сам)
-if (smokePuffs.length > 0) {
-  for (let i = smokePuffs.length - 1; i >= 0; i -= 1) {
-    const puff = smokePuffs[i]!;
-    puff.life += dt;
-    puff.mesh.position.addScaledVector(puff.velocity, dt);
-    const k = 1 - Math.min(1, puff.life / puff.maxLife);
-    puff.mesh.scale.setScalar(1 + (1 - k) * 0.8);
-    const mat = puff.mesh.material as THREE.MeshStandardMaterial;
-    mat.opacity = 0.65 * k;
-    if (puff.life >= puff.maxLife) {
-      engine.scene.remove(puff.mesh);
-      smokePuffs.splice(i, 1);
+      const resolved = world.resolvePlayerMovement(player.object.position, 0.9);
+      player.object.position.x = resolved.x;
+      player.object.position.z = resolved.z;
+    } else if (drivingCar) {
+      const resolved = world.resolveCarMovement(drivingCar.position, carCollisionRadius, drivingCar);
+      drivingCar.position.x = resolved.x;
+      drivingCar.position.z = resolved.z;
+      // Адаптируем высоту машины под рельеф/мост
+      const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+      drivingCar.position.y = h + 0.22;
     }
-  }
-}
+    // Адаптируем высоту машины под рельеф/мост
+    if (drivingCar) {
+      const h = world.getWorldHeight(drivingCar.position.x, drivingCar.position.z);
+      drivingCar.position.y = h + 0.22;
+    }
 
-// Уведомления у зданий (появляются при подходе к двери).
-const promos = [
-  {
-    label: "МТС БАНК",
-    // Специальное сообщение при старте (или если подойти к банку)
-    text: "УРА! Вам выдали кредитную карту. Изучите город, чтобы найти скидки!"
-  },
-  {
-    label: "МТС SHOP",
-    text: "С вашей Кредитной картой доступен кешбэк до 20% на всю технику",
-    action: {
-      label: "Открыть каталог",
-      onClick: () => {
-        window.open("https://shop.mts.ru/catalog", "_blank");
+    // Анимация дверей
+    if (!isDriving) {
+      world.updateDoors(dt, player.object.position);
+      world.updateParkedCarDoors(dt, player.object.position, enterCarRadius, enterCarRadius + 0.6);
+    } else {
+      world.closeAllParkedCarDoors(dt);
+    }
+
+    // Небольшой дымок при посадке (затухает сам)
+    if (smokePuffs.length > 0) {
+      for (let i = smokePuffs.length - 1; i >= 0; i -= 1) {
+        const puff = smokePuffs[i]!;
+        puff.life += dt;
+        puff.mesh.position.addScaledVector(puff.velocity, dt);
+        const k = 1 - Math.min(1, puff.life / puff.maxLife);
+        puff.mesh.scale.setScalar(1 + (1 - k) * 0.8);
+        const mat = puff.mesh.material as THREE.MeshStandardMaterial;
+        mat.opacity = 0.65 * k;
+        if (puff.life >= puff.maxLife) {
+          engine.scene.remove(puff.mesh);
+          smokePuffs.splice(i, 1);
+        }
       }
     }
-  },
-  {
-    label: "Магазин одежды",
-    text: "Вам доступна скидка 3% на одежду по вашей кредитной карте"
-  },
-  {
-    label: "МЕДСИ",
-    text: "Кешбэк 10 процентов на любые процедуры"
-  }
-] as const;
 
-let nearPromo: (typeof promos)[number] | null = null;
-if (!isDriving) {
-  for (const p of promos) {
-    // Ищем здание по имени в конфиге, чтобы узнать его размеры и позицию
-    const building = WORLD_CONFIG.buildings.find((b) => b.label === p.label);
-    if (!building) continue;
+    // Уведомления у зданий (появляются при подходе к двери).
+    const promos = [
+      {
+        label: "МТС БАНК",
+        // Специальное сообщение при старте (или если подойти к банку)
+        text: "УРА! Вам выдали кредитную карту. Изучите город, чтобы найти скидки!"
+      },
+      {
+        label: "МТС SHOP",
+        text: "С вашей Кредитной картой доступен кешбэк до 20% на всю технику",
+        action: {
+          label: "Открыть каталог",
+          onClick: () => {
+            window.open("https://shop.mts.ru/catalog", "_blank");
+          }
+        }
+      },
+      {
+        label: "Магазин одежды",
+        text: "Вам доступна скидка 3% на одежду по вашей кредитной карте"
+      },
+      {
+        label: "МЕДСИ",
+        text: "Кешбэк 10 процентов на любые процедуры"
+      }
+    ] as const;
 
-    // Определяем радиус "зоны действия" вокруг дома: половина размера + запас (4.5 метра)
-    // Берём максимум из ширины/глубины для простоты (можно точнее, но круг удобнее)
-    const radius = Math.max(building.size.x, building.size.z) / 2 + 4.5;
+    let nearPromo: (typeof promos)[number] | null = null;
+    if (!isDriving) {
+      for (const p of promos) {
+        // Ищем здание по имени в конфиге, чтобы узнать его размеры и позицию
+        const building = WORLD_CONFIG.buildings.find((b) => b.label === p.label);
+        if (!building) continue;
 
-    const dist = Math.hypot(
-      player.object.position.x - building.position.x,
-      player.object.position.z - building.position.z
-    );
+        // Определяем радиус "зоны действия" вокруг дома: половина размера + запас (4.5 метра)
+        // Берём максимум из ширины/глубины для простоты (можно точнее, но круг удобнее)
+        const radius = Math.max(building.size.x, building.size.z) / 2 + 4.5;
 
-    if (dist <= radius) {
-      nearPromo = p;
-      break;
+        const dist = Math.hypot(
+          player.object.position.x - building.position.x,
+          player.object.position.z - building.position.z
+        );
+
+        if (dist <= radius) {
+          nearPromo = p;
+          break;
+        }
+      }
     }
-  }
-}
 
-if (nearPromo) {
-  // Если вошли в другую зону промо — сбрасываем состояние старого, чтобы при следующем подходе снова показывалось.
-  if (activePromoLabel && activePromoLabel !== nearPromo.label) {
-    promoDismissedByLabel[activePromoLabel] = false;
-    shownPromoLabel = null;
-  }
-  activePromoLabel = nearPromo.label;
+    if (nearPromo) {
+      // Если вошли в другую зону промо — сбрасываем состояние старого, чтобы при следующем подходе снова показывалось.
+      if (activePromoLabel && activePromoLabel !== nearPromo.label) {
+        promoDismissedByLabel[activePromoLabel] = false;
+        shownPromoLabel = null;
+      }
+      activePromoLabel = nearPromo.label;
 
-  // Check quest objective
-  questManager.checkObjectiveReached(nearPromo.label);
+      // Check quest objective
+      questManager.checkObjectiveReached(nearPromo.label);
 
-  const dismissed = promoDismissedByLabel[nearPromo.label] === true;
-  if (!dismissed && shownPromoLabel !== nearPromo.label) {
-    // @ts-ignore
-    hud.showPromo(nearPromo.text, nearPromo.action);
-    shownPromoLabel = nearPromo.label;
-  }
-} else if (activePromoLabel) {
-  // Ушли от здания — прячем и разрешаем показывать снова при следующем подходе.
-  promoDismissedByLabel[activePromoLabel] = false;
-  activePromoLabel = null;
-  shownPromoLabel = null;
-  hud.hidePromo();
-}
+      const dismissed = promoDismissedByLabel[nearPromo.label] === true;
+      if (!dismissed && shownPromoLabel !== nearPromo.label) {
+        // @ts-ignore
+        hud.showPromo(nearPromo.text, nearPromo.action);
+        shownPromoLabel = nearPromo.label;
+      }
+    } else if (activePromoLabel) {
+      // Ушли от здания — прячем и разрешаем показывать снова при следующем подходе.
+      promoDismissedByLabel[activePromoLabel] = false;
+      activePromoLabel = null;
+      shownPromoLabel = null;
+      hud.hidePromo();
+    }
 
-cameraController.update();
-if (isDriving && drivingCar) {
-  hud.updateMinimap({ x: drivingCar.position.x, z: drivingCar.position.z, yaw: drivingCar.rotation.y });
-} else {
-  hud.updateMinimap({ x: player.object.position.x, z: player.object.position.z, yaw: player.object.rotation.y });
-}
+    cameraController.update();
+    if (isDriving && drivingCar) {
+      hud.updateMinimap({ x: drivingCar.position.x, z: drivingCar.position.z, yaw: drivingCar.rotation.y });
+    } else {
+      hud.updateMinimap({ x: player.object.position.x, z: player.object.position.z, yaw: player.object.rotation.y });
+    }
   }
 });
 
