@@ -1,55 +1,28 @@
+import "./styles.css";
+import * as THREE from "three";
+import { Engine } from "@core/Engine";
+import { Input } from "@core/Input";
+import { OrbitCameraController } from "@core/OrbitCameraController";
+import { World } from "@world/World";
+import { Player } from "@entities/Player";
+import { BUILDING_LAYOUT } from "@entities/Building";
+import { Hud } from "@ui/Hud";
+import { AudioManager } from "@core/AudioManager";
 import { QuestManager } from "@core/QuestManager";
+import { GAME_CONFIG } from "@config/game";
+import { WORLD_CONFIG } from "@config/world";
 
-// ... existing imports ...
+const container = document.getElementById("app");
+if (!container) {
+  throw new Error("App container not found");
+}
 
 const engine = new Engine(container);
 const hud = new Hud(container);
 const input = new Input(hud.element);
 const world = new World();
 const player = new Player();
-const questManager = new QuestManager(world.group, hud); // Instantiate QuestManager
-
-// ...
-
-engine.onUpdate((dt) => {
-  // ... existing update code ...
-
-  const playerPos = isDriving && drivingCar ? drivingCar.position : player.object.position;
-
-  // Update Quest Manager (candies animation, markers, physics)
-  questManager.update(dt, playerPos);
-
-  // ... collision logic ...
-
-  if (nearPromo) {
-    // Если вошли в другую зону промо — сбрасываем состояние старого
-    if (activePromoLabel && activePromoLabel !== nearPromo.label) {
-      promoDismissedByLabel[activePromoLabel] = false;
-      shownPromoLabel = null;
-    }
-    activePromoLabel = nearPromo.label;
-
-    // Check if this building is a quest objective
-    questManager.checkObjectiveReached(nearPromo.label);
-
-    const dismissed = promoDismissedByLabel[nearPromo.label] === true;
-    if (!dismissed && shownPromoLabel !== nearPromo.label) {
-      // @ts-ignore
-      hud.showPromo(nearPromo.text, nearPromo.action);
-      shownPromoLabel = nearPromo.label;
-    }
-  } else if (activePromoLabel) {
-    // ...
-  }
-
-  // ...
-  if (isDriving && drivingCar) {
-    hud.updateMinimap({ x: drivingCar.position.x, z: drivingCar.position.z, yaw: drivingCar.rotation.y });
-  } else {
-    hud.updateMinimap({ x: player.object.position.x, z: player.object.position.z, yaw: player.object.rotation.y });
-  }
-}
-});
+const questManager = new QuestManager(world.group, hud);
 const promoDismissedByLabel: Record<string, boolean> = {};
 
 // Audio
@@ -238,6 +211,10 @@ engine.addUpdatable(world, {
       input.setExitVisible(true);
       input.setDriving(true);
     }
+
+    // Quest Manager Update
+    const currentPos = isDriving && drivingCar ? drivingCar.position : player.object.position;
+    questManager.update(dt, currentPos);
 
     const move = input.getMoveVector();
     const sprint = input.isSprinting();
@@ -461,6 +438,9 @@ engine.addUpdatable(world, {
         shownPromoLabel = null;
       }
       activePromoLabel = nearPromo.label;
+
+      // Check quest objective
+      questManager.checkObjectiveReached(nearPromo.label);
 
       const dismissed = promoDismissedByLabel[nearPromo.label] === true;
       if (!dismissed && shownPromoLabel !== nearPromo.label) {
