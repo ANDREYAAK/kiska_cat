@@ -2531,8 +2531,8 @@ export class World implements Updatable {
       const h = b.size.y;
       const poleH = 4.0; // Height from ground to bottom of board
 
-      // Pole - Single central pole
-      const poleGeo = new THREE.CylinderGeometry(0.25, 0.25, poleH + h / 2, 8);
+      // Pole - Single central pole, thinner (0.08) to fit inside the 0.2 thick board
+      const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, poleH + h / 2, 8);
       const pole = new THREE.Mesh(poleGeo, poleMat);
       pole.position.set(0, (poleH + h / 2) / 2, 0);
       pole.castShadow = true;
