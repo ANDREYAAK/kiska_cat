@@ -132,7 +132,7 @@ const carForward = new THREE.Vector3();
 const carRight = new THREE.Vector3();
 const drivingSpeed = 12;
 const drivingSprintMultiplier = 1.4;
-const carTurnSpeed = 3.6;
+// const carTurnSpeed = 3.6; // No longer used
 const carCollisionRadius = 1.7;
 
 const spawnExhaustSmoke = (car: THREE.Object3D, yaw: number) => {
@@ -254,45 +254,70 @@ engine.addUpdatable(world, {
         player.update(dt, { x: 0, z: 0 }, { sprint, jump }, gh);
       }
     } else if (drivingCar) {
-      if (length > 0.01) {
-        const throttle = move.z;
-        // Make steering smoother
-        const targetSteer = -move.x;
-        // Interpolate current steering towards target
-        // We need a variable to store current steering. 
-        // Let's use drivingCar.userData.currentSteer or add a variable.
-        // Simplest: use a local static-like or module variable if single player.
-        // Or store on car userdata.
-        const currentSteer = drivingCar.userData.currentSteer ?? 0;
-        // Make it even smoother (lower = smoother/slower reaction)
-        const steerLerpSpeed = 2.0;
-        const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteer, steerLerpSpeed * dt);
-        drivingCar.userData.currentSteer = newSteer;
+      // Kinematic Bicycle Model
+      const throttle = move.z;
+      const steerInput = -move.x; // Left/Right
 
-        const speed = drivingSpeed * (sprint ? drivingSprintMultiplier : 1);
-        const steerScale = Math.max(0.2, Math.abs(throttle));
-        // Reduce max turn speed to prevent spinning out
-        drivingYaw += newSteer * carTurnSpeed * steerScale * dt;
+      // 1. Calculate Acceleration/Speed
+      // Use a simple momentum approximation or direct speed control? 
+      // User wants smooth but responsive. Direct speed control with inertia is best.
 
-        // Debug output (temporary)
-        // if (Math.random() < 0.05) console.log("Steer input:", targetSteer, "Actual:", newSteer);
+      const maxSpeed = drivingSpeed * (sprint ? drivingSprintMultiplier : 1);
+      const targetSpeed = throttle * maxSpeed;
+
+      // Init speed if not exists
+      if (typeof drivingCar.userData.speed !== 'number') drivingCar.userData.speed = 0;
+
+      // Acceleration/Deceleration factor
+      const accel = 6.0 * dt;
+      const decel = 10.0 * dt; // Braking/Coast is faster
+
+      if (Math.abs(targetSpeed) > Math.abs(drivingCar.userData.speed)) {
+        // Accelerating
+        drivingCar.userData.speed = THREE.MathUtils.lerp(drivingCar.userData.speed, targetSpeed, accel);
+      } else {
+        // Decelerating/Coasting
+        drivingCar.userData.speed = THREE.MathUtils.lerp(drivingCar.userData.speed, targetSpeed, decel);
+      }
+
+      // Force stop small speeds
+      if (Math.abs(drivingCar.userData.speed) < 0.1 && Math.abs(throttle) < 0.05) {
+        drivingCar.userData.speed = 0;
+      }
+
+      // 2. Steering Logic
+      // Steering should be direct but smooth. 
+      const currentSteer = drivingCar.userData.currentSteer ?? 0;
+      const steerLerpSpeed = 4.0; // Responsive but not instant
+      const maxSteerAngle = 0.6; // ~35 degrees max wheel turn
+
+      const targetSteerAngle = steerInput * maxSteerAngle;
+      const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteerAngle, steerLerpSpeed * dt);
+      drivingCar.userData.currentSteer = newSteer;
+
+      // 3. Apply Motion (Only turn if moving!)
+      const currentSpeed = drivingCar.userData.speed;
+      const wheelbase = 2.4; // Approx distance between axles in meters
+
+      if (Math.abs(currentSpeed) > 0.01) {
+        // Angular velocity = (velocity / L) * tan(delta)
+        const angularVelocity = (currentSpeed / wheelbase) * Math.tan(newSteer);
+        drivingYaw += angularVelocity * dt;
 
         carForward.set(Math.sin(drivingYaw), 0, Math.cos(drivingYaw));
-        carMove.copy(carForward).multiplyScalar(speed * throttle * dt);
+        carMove.copy(carForward).multiplyScalar(currentSpeed * dt);
+
         drivingCar.position.add(carMove);
         drivingCar.rotation.y = drivingYaw;
 
         // Auto-follow camera
-        if (length > 0.1) { // Only follow when moving/pressing gas
-          cameraController.updateFollowYaw(drivingYaw, dt);
-        }
+        cameraController.updateFollowYaw(drivingYaw, dt);
       }
 
-      // Обновляем дым у машины игрока (ВНЕ проверки на движение, чтобы дымил и на холостых)
+      // Обновляем дым
       if (drivingCar.userData.carInstance) {
-        // Передаем текущую "мощность" (throttle/speed) для адаптации дыма
-        // length - это сила нажатия (0..1)
-        drivingCar.userData.carInstance.updateSmoke(dt, length);
+        const pwr = Math.abs(currentSpeed / maxSpeed);
+        drivingCar.userData.carInstance.updateSmoke(dt, pwr);
       }
     }
 
