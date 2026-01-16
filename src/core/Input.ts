@@ -34,7 +34,6 @@ export class Input {
     if (joyLen > 0.05) {
       // Apply sensitivity curve to steering (X) to make driving straight easier on mobile
       // Using cubic function (x³) or x*abs(x) softens the center response.
-      // Let's use x * |x| for a natural feel.
       const steering = joy.x * Math.abs(joy.x);
       return { x: steering, z: -joy.y };
     }
@@ -120,7 +119,7 @@ export class Input {
       this.exitQueued = true;
     });
 
-    wrap.append(run, jump, exit);
+    wrap.append(exit, run, jump);
     uiLayer.appendChild(wrap);
   }
 

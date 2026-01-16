@@ -34,12 +34,14 @@ hud.onMusicToggle(() => {
 const startMusic = async () => {
   if (audioManager.isEnabled()) {
     try {
-      await audioManager.play();
-      // Only remove listeners if playback actually started
-      document.removeEventListener("click", startMusic);
-      document.removeEventListener("keydown", startMusic);
-      document.removeEventListener("touchstart", startMusic);
-      document.removeEventListener("pointerdown", startMusic);
+      const success = await audioManager.play();
+      if (success) {
+        // Only remove listeners if playback actually started (context resumed)
+        document.removeEventListener("click", startMusic);
+        document.removeEventListener("keydown", startMusic);
+        document.removeEventListener("touchstart", startMusic);
+        document.removeEventListener("pointerdown", startMusic);
+      }
     } catch (e) {
       // Failed (e.g. browser blocked it), keep listeners to try again on next interaction
     }
@@ -249,10 +251,21 @@ engine.addUpdatable(world, {
     } else if (drivingCar) {
       if (length > 0.01) {
         const throttle = move.z;
-        const steer = -move.x;
+        // Make steering smoother
+        const targetSteer = -move.x;
+        // Interpolate current steering towards target
+        // We need a variable to store current steering. 
+        // Let's use drivingCar.userData.currentSteer or add a variable.
+        // Simplest: use a local static-like or module variable if single player.
+        // Or store on car userdata.
+        const currentSteer = drivingCar.userData.currentSteer ?? 0;
+        const steerLerpSpeed = 4.0; // Adjustable smoothness
+        const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteer, steerLerpSpeed * dt);
+        drivingCar.userData.currentSteer = newSteer;
+
         const speed = drivingSpeed * (sprint ? drivingSprintMultiplier : 1);
         const steerScale = Math.max(0.2, Math.abs(throttle));
-        drivingYaw += steer * carTurnSpeed * steerScale * dt;
+        drivingYaw += newSteer * carTurnSpeed * steerScale * dt;
 
         carForward.set(Math.sin(drivingYaw), 0, Math.cos(drivingYaw));
         carMove.copy(carForward).multiplyScalar(speed * throttle * dt);

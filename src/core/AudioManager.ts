@@ -44,7 +44,7 @@ export class AudioManager {
     }
 
     async play() {
-        if (!this.enabled) return;
+        if (!this.enabled) return false;
         this.isPlaying = true;
 
         // Critical for mobile: resume context on user interaction
@@ -53,12 +53,17 @@ export class AudioManager {
                 await this.ctx.resume();
             } catch (e) {
                 console.warn("Context resume failed:", e);
+                // If we couldn't resume, we probably can't play. 
+                // Don't swallow the error completely for the caller?
+                // Or just return false.
+                return false;
             }
         }
 
         if (this.buffer && !this.source) {
             this.startSource();
         }
+        return true;
     }
 
     pause() {
