@@ -228,6 +228,8 @@ export class World implements Updatable {
     this.buildBenches();
     this.buildRocks();
     this.buildBirds();
+    this.buildBirds();
+    this.generateBillboards();
     this.buildTrafficCars();
   }
 
@@ -2511,15 +2513,7 @@ export class World implements Updatable {
     return door?.position;
   }
 
-  // Assuming this is part of a constructor or initialization method
-  // where generateLamps is also called.
-  // If this is not a constructor, please provide the full class context.
-  constructor() {
-    // ... other constructor logic ...
-    this.generateLamps();
-    this.generateBillboards();
-    // ... other constructor logic ...
-  }
+
 
   private generateBillboards() {
     const geo = new THREE.BoxGeometry(1, 1, 0.2); // Base unit box
