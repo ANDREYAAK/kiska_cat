@@ -21,7 +21,19 @@ export class Hud {
 
   constructor(container: HTMLElement) {
     this.element = document.createElement("div");
-    this.element.className = "ui";
+    this.element.className = "hud";
+
+    // Debug Version Label
+    const ver = document.createElement("div");
+    ver.style.position = "absolute";
+    ver.style.top = "5px";
+    ver.style.left = "5px";
+    ver.style.color = "lime";
+    ver.style.fontSize = "12px";
+    ver.style.zIndex = "999";
+    ver.textContent = "v0.2.2 (Smooth)";
+    this.element.appendChild(ver);
+
     this.element.innerHTML = `
       <div class="ui-top">
         <div class="logo">MTS City</div>
