@@ -3,7 +3,7 @@ import { WORLD_CONFIG } from "@config/world";
 import { GAME_CONFIG } from "@config/game";
 import { BUILDING_LAYOUT, createBuilding } from "@entities/Building";
 import { Car } from "@entities/Car";
-import { createProceduralTexture, createLicensePlateTexture, createBillboardTexture } from "@utils/textures";
+import { createProceduralTexture, createBillboardTexture } from "@utils/textures";
 import type { Updatable } from "@core/Engine";
 
 type TrafficDirection = "NS" | "EW";
