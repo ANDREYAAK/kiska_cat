@@ -153,10 +153,22 @@ export const WORLD_CONFIG = {
 
   billboards: [
     {
-      position: { x: -18, z: 62 }, // Intersection corner (Trading St @ z=70 & NS Road @ x=0)
-      rotation: Math.PI / 2, // Perpendicular to Trading St (Faces East)
-      size: { x: 4, y: 2.5 }, // Smaller
+      position: { x: -18, z: 62 }, // Intersection Main/Trading
+      rotation: Math.PI / 2,
+      size: { x: 4, y: 2.5 },
       text: "Персик, вам одобрено\n500 000 рублей,\nзаезжайте в МТС Банк\nи оформляйте заявку"
+    },
+    {
+      position: { x: -62, z: 62 }, // Intersection Park/Trading
+      rotation: Math.PI / 2,
+      size: { x: 4, y: 2.5 },
+      text: "Кредитная карта\nMTS CASHBACK\nдо 111 дней без %"
+    },
+    {
+      position: { x: 12, z: 112 }, // Intersection Main/European (T-junction)
+      rotation: 0,
+      size: { x: 4, y: 2.5 },
+      text: "Вклад МТС Вклад\nдо 16.5% годовых\nОткройте онлайн"
     }
   ] as { position: { x: number; z: number }; rotation: number; size: { x: number; y: number }; text: string }[]
 };

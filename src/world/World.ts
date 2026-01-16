@@ -2531,15 +2531,15 @@ export class World implements Updatable {
       const h = b.size.y;
       const poleH = 4.0; // Height from ground to bottom of board
 
-      // Poles
-      const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, poleH + h / 2, 8);
+      // Poles - make them thinner so they fit INSIDE the double-sided board without clipping text
+      const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, poleH + h / 2, 8);
       const leftPole = new THREE.Mesh(poleGeo, poleMat);
-      // Move poles slightly behind (z = -0.15) to avoid overlapping the front face
-      leftPole.position.set(-w * 0.3, (poleH + h / 2) / 2, -0.15);
+      // Center poles (z=0) but move to edges
+      leftPole.position.set(-w * 0.45, (poleH + h / 2) / 2, 0);
       leftPole.castShadow = true;
 
       const rightPole = new THREE.Mesh(poleGeo, poleMat);
-      rightPole.position.set(w * 0.3, (poleH + h / 2) / 2, -0.15);
+      rightPole.position.set(w * 0.45, (poleH + h / 2) / 2, 0);
       rightPole.castShadow = true;
 
       group.add(leftPole, rightPole);
