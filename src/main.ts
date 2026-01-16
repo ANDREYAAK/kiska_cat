@@ -24,7 +24,7 @@ const player = new Player();
 const promoDismissedByLabel: Record<string, boolean> = {};
 
 // Audio
-const audioManager = new AudioManager("./sounds/music.mp3", 0.4);
+const audioManager = new AudioManager("./sounds/music.mp3", 0.8);
 hud.onMusicToggle(() => {
   const enabled = audioManager.toggle();
   hud.setMusicIcon(enabled);
@@ -288,8 +288,8 @@ engine.addUpdatable(world, {
       // 2. Steering Logic
       // Steering should be direct but smooth. 
       const currentSteer = drivingCar.userData.currentSteer ?? 0;
-      const steerLerpSpeed = 4.0; // Responsive but not instant
-      const maxSteerAngle = 0.6; // ~35 degrees max wheel turn
+      const steerLerpSpeed = 1.5; // VERY smooth/lazy for mobile
+      const maxSteerAngle = 0.4; // ~23 degrees, prevents sharp jerks
 
       const targetSteerAngle = steerInput * maxSteerAngle;
       const newSteer = THREE.MathUtils.lerp(currentSteer, targetSteerAngle, steerLerpSpeed * dt);
