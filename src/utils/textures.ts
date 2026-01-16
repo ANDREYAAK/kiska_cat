@@ -248,3 +248,49 @@ export const createLicensePlateTexture = (text: string) => {
   texture.minFilter = THREE.LinearFilter;
   return texture;
 };
+
+export const createBillboardTexture = (text: string, bgColor: string = "#ffffff", textColor: string = "#e30611") => {
+  const width = 512;
+  const height = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.Texture();
+
+  // Background
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, width, height);
+
+  // Border
+  ctx.strokeStyle = textColor;
+  ctx.lineWidth = 10;
+  ctx.strokeRect(5, 5, width - 10, height - 10);
+
+  // Logo hint (Red square top left)
+  ctx.fillStyle = "#e30611";
+  ctx.fillRect(20, 20, 50, 50);
+  ctx.fillStyle = "white";
+  ctx.font = "bold 16px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("MTS", 45, 45);
+
+  // Text
+  ctx.fillStyle = textColor;
+  ctx.font = "bold 28px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const lines = text.split("\n");
+  const lineHeight = 36;
+  const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;
+
+  lines.forEach((line, i) => {
+    ctx.fillText(line.trim(), width / 2, startY + i * lineHeight);
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter; // Sharp text
+  return texture;
+};

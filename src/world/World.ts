@@ -228,7 +228,6 @@ export class World implements Updatable {
     this.buildBenches();
     this.buildRocks();
     this.buildBirds();
-    this.buildBirds();
     this.generateBillboards();
     this.buildTrafficCars();
   }
@@ -2563,13 +2562,12 @@ export class World implements Updatable {
       this.group.add(group);
 
       // Collider (Approximation)
-      const collider = new THREE.Mesh(
-        new THREE.BoxGeometry(w, poleH, 1),
-        new THREE.MeshBasicMaterial({ visible: false })
-      );
-      collider.position.set(b.position.x, poleH / 2, b.position.z);
-      collider.rotation.y = b.rotation;
-      this.colliders.push(collider);
+      this.colliders.push({
+        position: { x: b.position.x, z: b.position.z },
+        half: { x: w / 2, z: 0.5 }, // Thin z-depth for billboard
+        rotation: b.rotation,
+        type: "building"
+      });
     }
   }
 
