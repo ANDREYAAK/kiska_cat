@@ -1,23 +1,27 @@
 import * as THREE from "three";
 import { createLicensePlateTexture } from "@utils/textures";
 import type { Updatable } from "@core/Engine";
+import { TrafficEdge } from "../world/TrafficGraph";
 
 const smokeGeo = new THREE.SphereGeometry(0.1, 6, 6);
 const smokeMat = new THREE.MeshBasicMaterial({
-  color: 0x888888,
+  color: 0xcccccc, // Lighter smoke
   transparent: true,
-  opacity: 0.6,
+  opacity: 0.8, // More visible
   depthWrite: false
 });
 
 
 type CarOptions = {
   color: string;
-  speed: number; // units/sec
+  speed?: number; // units/sec
   y?: number;
   startIndex?: number;
   parked?: boolean;
   plateText?: string;
+  loop?: boolean;
+  template?: THREE.Object3D; // Новый параметр: готовый меш (например, автобус)
+  style?: "bubble" | "square" | "sports";
 };
 
 export class Car implements Updatable {
@@ -29,6 +33,9 @@ export class Car implements Updatable {
   private animTime = 0;
   private speedScale = 1;
   private readonly isParked: boolean;
+  private readonly loop: boolean;
+  private readonly style: string = "bubble";
+  public finished = false;
   private doorPivot?: THREE.Object3D;
   private doorVoid?: THREE.Object3D;
   private doorOpen = 0;
@@ -49,16 +56,41 @@ export class Car implements Updatable {
   private smokeParticles: { mesh: THREE.Mesh; life: number; velocity: THREE.Vector3 }[] = [];
   private nextSmokeTime = 0;
 
+  // Route support
+  public routeQueue: TrafficEdge[] = [];
+  public needsNewRoute = false;
+
   constructor(path: THREE.Vector3[], options: CarOptions) {
     this.path = path;
-    this.speed = options.speed;
+    this.speed = options.speed ?? 4;
     this.y = options.y ?? 0.22;
     this.targetIndex = Math.max(0, Math.min(path.length - 1, options.startIndex ?? 0));
     this.isParked = !!options.parked;
+    this.loop = options.loop ?? true;
+    this.style = options.style || "bubble";
 
-    this.isParked = !!options.parked;
-
-    this.object.add(this.buildModel(options.color, options.plateText));
+    if (options.template) {
+      // Шаблон уже нормализован при загрузке в Game.ts (normalizeObjectPivot + масштабирование)
+      // Просто клонируем и добавляем - pivot point уже в центре, масштаб правильный
+      const templateClone = options.template.clone(true);
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сбрасываем поворот шаблона сразу после клонирования
+      // чтобы гарантировать, что машина начнет с нулевого поворота
+      templateClone.rotation.set(0, 0, 0);
+      templateClone.quaternion.set(0, 0, 0, 1);
+      this.object.add(templateClone);
+      // Если это кастомный шаблон, мы всё равно добавим котика, но позиция будет зависеть от имени/типа
+      console.log("[Car] Using custom template:", options.template.name);
+      this.addDriverToTemplate(options.template.name);
+    } else {
+      const style = options.style || "bubble";
+      if (style === "square") {
+        this.object.add(this.buildSquareCar(options.color, options.plateText));
+      } else if (style === "sports") {
+        this.object.add(this.buildSportsCar(options.color, options.plateText));
+      } else {
+        this.object.add(this.buildBubbleCar(options.color, options.plateText));
+      }
+    }
     this.object.add(this.smokeGroup);
 
     // Стартуем прямо на маршруте.
@@ -68,6 +100,7 @@ export class Car implements Updatable {
     if (options.plateText) {
       this.object.userData.plateText = options.plateText;
     }
+    this.object.userData.carStyle = this.style;
   }
 
   setSpeedScale(scale: number) {
@@ -76,6 +109,18 @@ export class Car implements Updatable {
 
   setDoorOpen(open: boolean) {
     this.doorOpenTarget = open ? 1 : 0;
+  }
+
+  setPath(newPath: THREE.Vector3[]) {
+    this.path.length = 0;
+    this.path.push(...newPath);
+    this.targetIndex = 0;
+    this.finished = false;
+  }
+
+  setRoute(edges: TrafficEdge[]) {
+    this.routeQueue = edges;
+    this.needsNewRoute = false;
   }
 
   getForward2D() {
@@ -87,7 +132,9 @@ export class Car implements Updatable {
     if (this.path.length < 2) return;
     this.animTime += dt;
 
-    const target = this.path[this.targetIndex]!;
+    const target = this.path[this.targetIndex];
+    if (!target) return; // Prevent crash if path invalid
+
     const px = this.object.position.x;
     const pz = this.object.position.z;
     const dx = target.x - px;
@@ -96,7 +143,16 @@ export class Car implements Updatable {
 
     // Переходим к следующей точке, когда почти доехали.
     if (dist < 0.55) {
-      this.targetIndex = (this.targetIndex + 1) % this.path.length;
+      if (this.targetIndex < this.path.length - 1) {
+        this.targetIndex++;
+      } else {
+        // End of loop or path
+        if (this.loop) {
+          this.targetIndex = 0;
+        } else {
+          this.finished = true;
+        }
+      }
       return;
     }
 
@@ -125,13 +181,18 @@ export class Car implements Updatable {
       this.driver.head.position.y = this.driver.headBaseY + bob;
       this.driver.earL.position.y = this.driver.earBaseY + bob * 0.9;
       this.driver.earR.position.y = this.driver.earBaseY + bob * 0.9;
+
+      if (this.driver.chest) {
+        this.driver.chest.position.y = this.driver.chestBaseY + bob * 0.5;
+      }
     }
 
     // Передаем speedScale для адаптации дыма (стоит/едет)
     this.updateSmoke(dt, this.speedScale);
   }
 
-  private buildModel(color: string, plateText?: string) {
+  // Legacy alias if needed, or just renamed
+  private buildBubbleCar(color: string, plateText?: string) {
     const root = new THREE.Group();
 
     // Стиль как в cat-banking-game: “пузатый пузырь” из сфер с масштабом.
@@ -831,10 +892,488 @@ export class Car implements Updatable {
     return root;
   }
 
+  // === SQUARE CAR (Funny, Boxy, Roof, Glass) ===
+  private buildSquareCar(color: string, plateText?: string) {
+    const root = new THREE.Group();
+
+    // Materials
+    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.1 });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: "#bfe6ff",
+      roughness: 0.1,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide
+    });
+    const darkMat = new THREE.MeshStandardMaterial({ color: "#1f2a33", roughness: 0.9 });
+    const catMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf2a158,
+      roughness: 0.55,
+      metalness: 0.0,
+      sheen: 1.0,
+      sheenRoughness: 0.45,
+      sheenColor: 0xffe1cc,
+      map: this.createFurTexture()
+    });
+    const catWhiteMat = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.65 });
+    const earInnerMat = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.45 });
+
+    // 1. Body: A simple slightly rounded box
+    // base block
+    const bodyGeo = new THREE.BoxGeometry(1.8, 0.7, 3.2); // w, h, d
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.6; // lift up
+    body.castShadow = true;
+    body.receiveShadow = true;
+    root.add(body);
+
+    // 2. Cabin: Smaller box on top
+    const cabinGeo = new THREE.BoxGeometry(1.35, 0.8, 1.75); // Depth reduced 1.8 -> 1.75
+    const cabin = new THREE.Mesh(cabinGeo, glassMat);
+    cabin.position.set(0, 1.35, -0.2); // shifted back a bit
+    cabin.castShadow = true;
+    root.add(cabin);
+
+    // Roof (solid) on top of cabin
+    const roofGeo = new THREE.BoxGeometry(1.7, 0.1, 2.0);
+    const roof = new THREE.Mesh(roofGeo, bodyMat);
+    roof.position.set(0, 1.8, -0.2);
+    roof.castShadow = true;
+    root.add(roof);
+
+    // Pillars (optional, to make it look safer)
+    const pillarGeo = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+    const fl = new THREE.Mesh(pillarGeo, bodyMat); fl.position.set(0.75, 1.35, 0.65); root.add(fl);
+    const fr = new THREE.Mesh(pillarGeo, bodyMat); fr.position.set(-0.75, 1.35, 0.65); root.add(fr);
+    const bl = new THREE.Mesh(pillarGeo, bodyMat); bl.position.set(0.75, 1.35, -1.05); root.add(bl);
+    const br = new THREE.Mesh(pillarGeo, bodyMat); br.position.set(-0.75, 1.35, -1.05); root.add(br);
+
+    // 3. Cat Driver (Visible inside)
+    if (!this.isParked) {
+      // Head
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), catMat);
+      head.position.set(0, 1.3, 0.1);
+      root.add(head);
+
+      // Body/Chest
+      const chest = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), catMat);
+      chest.position.set(0, 0.9, 0.1);
+      root.add(chest);
+
+      // Arms on steering wheel
+      const armGeo = new THREE.CapsuleGeometry(0.12, 0.4, 4, 8);
+      const armL = new THREE.Mesh(armGeo, catWhiteMat);
+      armL.rotation.x = -Math.PI / 3;
+      armL.rotation.z = -0.2;
+      armL.position.set(-0.3, 1.0, 0.4);
+      root.add(armL);
+      const armR = new THREE.Mesh(armGeo, catWhiteMat);
+      armR.rotation.x = -Math.PI / 3;
+      armR.rotation.z = 0.2;
+      armR.position.set(0.3, 1.0, 0.4);
+      root.add(armR);
+
+      // Face
+      this.addPlayerStyleFace(head, catWhiteMat, 0.5);
+
+      // Ears
+      // Scale ears 0.55 (~ 0.5/0.9)
+      const earL = this.createPlayerStyleEar(-0.25, catMat, earInnerMat, 0.55);
+      earL.position.set(-0.25, 1.7, 0.1);
+      root.add(earL);
+      const earR = this.createPlayerStyleEar(0.25, catMat, earInnerMat, 0.55);
+      earR.position.set(0.25, 1.7, 0.1);
+      root.add(earR);
+
+      // Assign to driver for animation
+      this.driver = {
+        head, chest, earL, earR,
+        headBaseY: head.position.y,
+        chestBaseY: chest.position.y,
+        earBaseY: earL.position.y
+      };
+
+      // Steering Wheel
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.04, 8, 16), darkMat);
+      wheel.position.set(0, 1.0, 0.6);
+      wheel.rotation.x = -0.4;
+      root.add(wheel);
+    }
+
+    // 4. Wheels (Simple cylinders but distinct)
+    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: "#111" });
+    const wheelHubMat = new THREE.MeshStandardMaterial({ color: "#888" });
+
+    const wheelPositions: Array<[number, number, number]> = [
+      [0.9, 0.35, 1.1], [-0.9, 0.35, 1.1],
+      [0.9, 0.35, -1.1], [-0.9, 0.35, -1.1]
+    ];
+    wheelPositions.forEach(([x, y, z]) => {
+      const w = new THREE.Group();
+      w.position.set(x, y, z);
+      w.rotation.z = Math.PI / 2;
+      const tire = new THREE.Mesh(wheelGeo, wheelMat);
+      tire.castShadow = true;
+      w.add(tire);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.26, 8), wheelHubMat);
+      w.add(hub);
+      root.add(w);
+    });
+
+    // 5. Lights (Square lights for square car)
+    const lightGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
+    const headLightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
+    const tailLightMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 1 });
+
+    const hl1 = new THREE.Mesh(lightGeo, headLightMat); hl1.position.set(0.5, 0.6, 1.6); root.add(hl1);
+    const hl2 = new THREE.Mesh(lightGeo, headLightMat); hl2.position.set(-0.5, 0.6, 1.6); root.add(hl2);
+    const tl1 = new THREE.Mesh(lightGeo, tailLightMat); tl1.position.set(0.5, 0.6, -1.6); root.add(tl1);
+    const tl2 = new THREE.Mesh(lightGeo, tailLightMat); tl2.position.set(-0.5, 0.6, -1.6); root.add(tl2);
+
+    // 6. Door Logic (Square doors)
+    // We'll make a dedicated group for the door to animate it.
+    // Cutout simulation: colored slightly differently or just a separate mesh on surface
+    if (this.isParked) {
+      const doorW = 0.8;
+      const doorH = 0.6;
+      const doorD = 0.05;
+      const doorGeo = new THREE.BoxGeometry(doorD, doorH, doorW);
+      const doorMat = bodyMat.clone();
+
+      // Pivot is at the hinge (front)
+      const doorGroup = new THREE.Group();
+      // Hinge position: side of car, height center, front of door
+      // Door is roughly from z=-0.4 to z=0.4
+      doorGroup.position.set(0.9, 0.6, 0.4);
+
+      const doorMesh = new THREE.Mesh(doorGeo, doorMat);
+      // Offset mesh so its front edge is at pivot
+      doorMesh.position.set(0, 0, -doorW / 2);
+      doorGroup.add(doorMesh);
+
+      // Handle
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.15), darkMat);
+      handle.position.set(0.02, 0.1, -doorW + 0.1);
+      doorGroup.add(handle);
+
+      this.doorPivot = doorGroup;
+      root.add(doorGroup);
+
+      // Optional void black box behind
+      const voidGeo = new THREE.BoxGeometry(0.1, doorH * 0.9, doorW * 0.9);
+      const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      const doorVoid = new THREE.Mesh(voidGeo, voidMat);
+      doorVoid.position.set(0.89, 0.6, 0.0);
+      doorVoid.visible = false;
+      this.doorVoid = doorVoid;
+      root.add(doorVoid);
+    }
+
+    // Plate
+    if (plateText) {
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), new THREE.MeshBasicMaterial({ map: createLicensePlateTexture(plateText), side: THREE.DoubleSide }));
+      plate.position.set(0, 0.35, -1.61);
+      plate.rotation.y = Math.PI;
+      root.add(plate);
+    }
+
+    return root;
+  }
+
+  // === SPORTS CAR (Sleek, Premium, Low, Aggressive) ===
+  private buildSportsCar(color: string, plateText?: string) {
+    const root = new THREE.Group();
+
+    // 1. Materials
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.2,
+      metalness: 0.6
+    });
+    const blackMat = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      roughness: 0.8,
+      metalness: 0.2
+    });
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x111111,
+      roughness: 0.0,
+      metalness: 0.9,
+      transmission: 0.2,
+      transparent: true
+    });
+    const chromeMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.1,
+      metalness: 0.9
+    });
+
+    // 2. DIMENSIONS & SCALE
+    const width = 2.2;
+    // const length = 4.8; // Approximate visual length
+
+    // 3. CHASSIS / FLOOR (Black Undercarriage)
+    const chassisGeo = new THREE.BoxGeometry(width - 0.2, 0.2, 4.4);
+    const chassis = new THREE.Mesh(chassisGeo, blackMat);
+    chassis.position.y = 0.25;
+    chassis.castShadow = true;
+    root.add(chassis);
+
+    // 4. MAIN BODY SHELL (Central Fuselage + Hood + Rear Deck)
+    const bodyShape = new THREE.Shape();
+    // Start at front bottom (X is length in Shape, Z is width after rotation)
+    bodyShape.moveTo(2.4, 0.3); // Nose bottom
+    bodyShape.lineTo(2.5, 0.6); // Nose top (Aggressive forward lean)
+    bodyShape.lineTo(0.8, 0.75); // Base of windshield / Hood rear
+    bodyShape.lineTo(-0.2, 1.15); // Roof peak start
+    bodyShape.lineTo(-1.0, 1.10); // Roof end (Coupe slope)
+    bodyShape.lineTo(-1.8, 0.90); // Deck lid start
+    bodyShape.lineTo(-2.2, 0.92); // Spoiler lip integration
+    bodyShape.lineTo(-2.3, 0.45); // Rear bumper top
+    bodyShape.lineTo(-2.25, 0.35); // Rear bumper bottom
+    bodyShape.lineTo(2.4, 0.3); // Close
+
+    const bodyExtrudeSettings = {
+      depth: 1.4, // Central width
+      bevelEnabled: true,
+      bevelThickness: 0.05,
+      bevelSize: 0.05,
+      bevelSegments: 3
+    };
+    const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, bodyExtrudeSettings);
+    bodyGeo.translate(0, 0, -0.7); // Center Z (width)
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.rotation.y = Math.PI / 2; // X-axis (length) becomes Z-axis in world
+    body.castShadow = true;
+    body.receiveShadow = true;
+    root.add(body);
+
+    // 5. WIDE FENDERS (Muscle vibes)
+    const fenderShape = new THREE.Shape();
+    fenderShape.moveTo(2.3, 0.3);
+    fenderShape.lineTo(2.35, 0.55);
+    fenderShape.lineTo(1.2, 0.68); // Front wheel arch top start
+    fenderShape.lineTo(-1.5, 0.78); // Rear waistline high
+    fenderShape.lineTo(-2.2, 0.6);
+    fenderShape.lineTo(-2.2, 0.3);
+    fenderShape.lineTo(2.3, 0.3);
+
+    const fenderExtrude = { depth: 0.45, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 };
+    const fenderGeo = new THREE.ExtrudeGeometry(fenderShape, fenderExtrude);
+    // No center translate, we position manually
+
+    // Left Fender (+X side)
+    const fenderL = new THREE.Mesh(fenderGeo, bodyMat);
+    fenderL.rotation.y = Math.PI / 2;
+    fenderL.position.x = 0.7; // Sticks out from central body (width 1.4 -> 0.7 half)
+    fenderL.castShadow = true;
+    root.add(fenderL);
+
+    // Right Fender (-X side)
+    const fenderR = new THREE.Mesh(fenderGeo, bodyMat);
+    fenderR.rotation.y = Math.PI / 2;
+    fenderR.position.x = -0.7 - 0.45; // -Center - Depth
+    fenderR.castShadow = true;
+    root.add(fenderR);
+
+
+    // 6. RECESSED HEADLIGHTS ("Deep Sockets")
+    // Grille Box acting as the dark recess
+    const grilleGeo = new THREE.BoxGeometry(1.3, 0.25, 0.3);
+    const grille = new THREE.Mesh(grilleGeo, blackMat);
+    grille.position.set(0, 0.48, 2.3); // Recessed relative to nose tip (2.5)
+    root.add(grille);
+
+    // Actual Lights
+    const lightGeo = new THREE.BoxGeometry(0.4, 0.1, 0.05);
+    const lightMat = new THREE.MeshStandardMaterial({
+      color: 0xaaccff,
+      emissive: 0xaaccff,
+      emissiveIntensity: 2.0
+    });
+
+    const hlL = new THREE.Mesh(lightGeo, lightMat);
+    hlL.position.set(0.35, 0, 0.15); // On surface of grille
+    grille.add(hlL);
+
+    const hlR = new THREE.Mesh(lightGeo, lightMat);
+    hlR.position.set(-0.35, 0, 0.15);
+    grille.add(hlR);
+
+    // 7. WHEELS (Wide and large)
+    const wheelRadius = 0.4;
+    const wheelWidth = 0.35;
+    const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 24);
+    const tireMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9, metalness: 0.1 });
+    const rimGeo = new THREE.CylinderGeometry(0.25, 0.25, wheelWidth + 0.02, 16);
+
+    const wheelZFront = 1.6;
+    const wheelZRear = -1.4;
+    const wheelXOuter = 0.95;
+
+    const makeWheel = (x: number, z: number, isRear = false) => {
+      const g = new THREE.Group();
+      g.position.set(x, 0.4, z); // Center height
+      g.rotation.z = Math.PI / 2;
+
+      const r = isRear ? 1.05 : 1.0;
+      const wWidth = isRear ? 1.2 : 1.0;
+
+      const t = new THREE.Mesh(wheelGeo, tireMat);
+      t.scale.set(r, wWidth, r);
+      t.castShadow = true;
+      g.add(t);
+
+      const rim = new THREE.Mesh(rimGeo, chromeMat);
+      rim.scale.set(1, wWidth, 1);
+      rim.position.y = (x > 0 ? 1 : -1) * 0.02 * wWidth; // Offset rim out
+      g.add(rim);
+
+      // Spokes
+      const sGeo = new THREE.BoxGeometry(0.35, 0.04, 0.06);
+      const s1 = new THREE.Mesh(sGeo, blackMat); g.add(s1);
+      const s2 = new THREE.Mesh(sGeo, blackMat); s2.rotation.y = Math.PI / 2; g.add(s2);
+
+      root.add(g);
+    };
+    makeWheel(wheelXOuter, wheelZFront);
+    makeWheel(-wheelXOuter, wheelZFront);
+    makeWheel(wheelXOuter, wheelZRear, true);
+    makeWheel(-wheelXOuter, wheelZRear, true);
+
+    // 8. WINDSHIELD & CABIN GLASS
+    // Update: leaning BACKWARDS towards driver.
+    const wsGeo = new THREE.BoxGeometry(1.25, 0.05, 0.7);
+    const ws = new THREE.Mesh(wsGeo, glassMat);
+    // Positioned further forward (away from driver)
+    ws.position.set(0, 1.25, 0.85); // Moved from 0.35 to 0.85
+    ws.rotation.x = Math.PI / 5; // Leans back towards driver
+    root.add(ws);
+
+    // 9. REAR WINGS
+    const wingStrutGeo = new THREE.BoxGeometry(0.05, 0.3, 0.15);
+    const strutL = new THREE.Mesh(wingStrutGeo, bodyMat); strutL.position.set(0.5, 1.0, -1.9); root.add(strutL);
+    const strutR = new THREE.Mesh(wingStrutGeo, bodyMat); strutR.position.set(-0.5, 1.0, -1.9); root.add(strutR);
+
+    const wingBoardGeo = new THREE.BoxGeometry(1.8, 0.04, 0.35);
+    const wing = new THREE.Mesh(wingBoardGeo, bodyMat);
+    wing.position.set(0, 1.15, -2.0);
+    wing.castShadow = true;
+    root.add(wing);
+
+    // 10. DRIVER (Cat) - MUST BE VISIBLE
+    if (!this.isParked) {
+      const catMat = new THREE.MeshPhysicalMaterial({ color: 0xf2a158, map: this.createFurTexture() });
+      const catWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+      const earInnerMat = new THREE.MeshStandardMaterial({ color: 0xffb6c1 });
+
+      // Leather Seat Material (Brown)
+      const seatMat = new THREE.MeshStandardMaterial({
+        color: 0x8b4513, // SaddleBrown
+        roughness: 0.9,
+        metalness: 0.1
+      });
+      // Stitching (Lighter brown line)
+      const stitchMat = new THREE.MeshBasicMaterial({ color: 0xcd853f });
+
+      // SEAT (Rounded corners + Stitching)
+      // Use Cylinder for rounded top of backrest? Or bevelled Box. Box with details is fine.
+      const seatBackGeo = new THREE.BoxGeometry(0.9, 0.8, 0.15);
+      const seatBack = new THREE.Mesh(seatBackGeo, seatMat);
+      seatBack.position.set(0, 1.1, -0.6); // Behind cat
+      seatBack.rotation.x = -0.15; // Reclined
+      root.add(seatBack);
+
+      // Stitching lines on back
+      const stitchV1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.7, 0.16), stitchMat); stitchV1.position.set(-0.25, 0, 0); seatBack.add(stitchV1);
+      const stitchV2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.7, 0.16), stitchMat); stitchV2.position.set(0.25, 0, 0); seatBack.add(stitchV2);
+      const stitchH1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.16), stitchMat); stitchH1.position.set(0, 0.2, 0); seatBack.add(stitchH1);
+
+      const seatBottomGeo = new THREE.BoxGeometry(0.9, 0.15, 0.6);
+      const seatBottom = new THREE.Mesh(seatBottomGeo, seatMat);
+      seatBottom.position.set(0, 0.75, -0.3);
+      root.add(seatBottom);
+
+      // BODY/CHEST (Visible now)
+      const chest = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), catMat);
+      chest.scale.set(1.1, 0.8, 0.9);
+      chest.position.set(0, 1.1, -0.25); // Sitting on seat
+      root.add(chest);
+
+      // HEAD
+      // Player head is radius 0.9. We want slightly smaller but proportional.
+      const headRadius = 0.45;
+      const s = headRadius / 0.9;
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 32, 24), catMat);
+      head.scale.set(1.05, 0.95, 1.05); // Match Player.ts scale
+      head.position.set(0, 1.55, -0.2);
+      root.add(head);
+
+      // Face
+      this.addPlayerStyleFace(head, catWhiteMat, headRadius);
+
+      // Ears (Attached to Head now, like Player.ts)
+      const earL = this.createPlayerStyleEar(-0.45, catMat, earInnerMat, s);
+      head.add(earL);
+
+      const earR = this.createPlayerStyleEar(0.45, catMat, earInnerMat, s);
+      head.add(earR);
+
+      this.driver = {
+        head,
+        chest,
+        earL,
+        earR,
+        headBaseY: head.position.y,
+        chestBaseY: chest.position.y,
+        earBaseY: earL.position.y
+      };
+
+      // Steering wheel (Raised)
+      const sw = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 16), blackMat);
+      sw.position.set(0, 1.1, 0.4); // Higher
+      sw.rotation.x = -0.4;
+      root.add(sw);
+
+      // Paws on wheel
+      const pawGeo = new THREE.SphereGeometry(0.08, 12, 12);
+      const pawL = new THREE.Mesh(pawGeo, catWhiteMat); pawL.position.set(-0.15, 0, 0); sw.add(pawL);
+      const pawR = new THREE.Mesh(pawGeo, catWhiteMat); pawR.position.set(0.15, 0, 0); sw.add(pawR);
+    }
+
+    // Tail lights
+    const tlGeo = new THREE.BoxGeometry(1.6, 0.12, 0.1);
+    const tlMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 1.5 });
+    const tl = new THREE.Mesh(tlGeo, tlMat);
+    tl.position.set(0, 0.7, -2.33);
+    root.add(tl);
+
+    // License Plate
+    if (plateText) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.12), new THREE.MeshBasicMaterial({ map: createLicensePlateTexture(plateText) }));
+      p.rotation.y = Math.PI;
+      p.position.set(0, 0.45, -2.31); // Bumper level
+      // Slant it
+      p.rotation.x = -0.1;
+      root.add(p);
+    }
+
+    // Exhausts
+    const exGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.2, 12);
+    const ex1 = new THREE.Mesh(exGeo, chromeMat); ex1.rotation.x = Math.PI / 2; ex1.position.set(0.4, 0.25, -2.35); root.add(ex1);
+    const ex2 = new THREE.Mesh(exGeo, chromeMat); ex2.rotation.x = Math.PI / 2; ex2.position.set(-0.4, 0.25, -2.35); root.add(ex2);
+
+    return root;
+  }
+
+
   public updateSmoke(dt: number, speedRatio: number = 1.0) {
+    // return; // DISABLED FOR PERFORMANCE TESTING
     if (this.isParked) return;
 
-    this.nextSmokeTime -= dt;
     if (this.nextSmokeTime <= 0) {
       // Если стоим (или почти стоим), дым реже и меньше.
       const isIdle = speedRatio < 0.1;
@@ -844,16 +1383,34 @@ export class Car implements Updatable {
         : 0.05 + Math.random() * 0.05; // Часто на ходу
 
       const mesh = new THREE.Mesh(smokeGeo, smokeMat);
-      // Начальная позиция (координаты трубы относительно центра машины)
+
+      // Начальная позиция зависит от стиля
+      let exX = 0.45;
+      let exY = 0.43;
+      let exZ = -2.15;
+
+      if (this.style === "sports") {
+        // Dual exhaust: alternate left/right or random
+        const side = Math.random() > 0.5 ? 1 : -1;
+        exX = side * 0.2;
+        exY = 0.35;
+        exZ = -2.0;
+      } else if (this.style === "square") {
+        exX = 0.35;
+        exY = 0.3;
+        exZ = -1.6;
+      }
+
       mesh.position.set(
-        0.45 + (Math.random() - 0.5) * 0.1,
-        0.43 + (Math.random() - 0.5) * 0.1,
-        -2.15 // Чуть дальше трубы
+        exX + (Math.random() - 0.5) * 0.1,
+        exY + (Math.random() - 0.5) * 0.1,
+        exZ // Чуть дальше трубы
       );
 
       // Размер: на холостых поменьше
-      const baseScale = isIdle ? 0.35 : 0.6;
-      mesh.scale.setScalar(baseScale + Math.random() * 0.4);
+      // INCREASED SIZE FOR VISIBILITY
+      const baseScale = isIdle ? 0.5 : 0.8;
+      mesh.scale.setScalar(baseScale + Math.random() * 0.5);
 
       // Случайный поворот для разнообразия
       mesh.rotation.z = Math.random() * Math.PI;
@@ -975,6 +1532,28 @@ export class Car implements Updatable {
     rightPupilHighlight.position.set(0.27 * s, 0.18 * s, 1.05 * s);
     head.add(rightPupilHighlight);
 
+    // BROWSSS (Added to match Player.ts)
+    const eyebrowMat = new THREE.MeshStandardMaterial({ color: 0xd07a3a, roughness: 0.55, metalness: 0.05 });
+
+    const leftBrowCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.48 * s, 0.44 * s, 0.70 * s),
+      new THREE.Vector3(-0.32 * s, 0.50 * s, 0.72 * s),
+      new THREE.Vector3(-0.16 * s, 0.44 * s, 0.70 * s)
+    ]);
+    const leftBrowGeo = new THREE.TubeGeometry(leftBrowCurve, 16, 0.035 * s, 10, false);
+    const leftBrowMesh = new THREE.Mesh(leftBrowGeo, eyebrowMat);
+    leftBrowMesh.castShadow = true;
+    head.add(leftBrowMesh);
+
+    const rightBrowCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.16 * s, 0.44 * s, 0.70 * s),
+      new THREE.Vector3(0.32 * s, 0.50 * s, 0.72 * s),
+      new THREE.Vector3(0.48 * s, 0.44 * s, 0.70 * s)
+    ]);
+    const rightBrowGeo = new THREE.TubeGeometry(rightBrowCurve, 16, 0.035 * s, 10, false);
+    const rightBrowMesh = new THREE.Mesh(rightBrowGeo, eyebrowMat);
+    rightBrowMesh.castShadow = true;
+    head.add(rightBrowMesh);
 
     const noseGeo = new THREE.SphereGeometry(0.13 * s, 16, 16);
     const noseMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.4 });
@@ -1015,22 +1594,32 @@ export class Car implements Updatable {
     parent.add(new THREE.Line(geometry, whiskerLineMat));
   }
 
-  private createPlayerStyleEar(xOffset: number, outerMat: THREE.Material, innerMat: THREE.Material) {
+  private createPlayerStyleEar(xOffset: number, outerMat: THREE.Material, innerMat: THREE.Material, scale: number = 1.0) {
     const earRoot = new THREE.Group();
-    const outer = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.48, 14), outerMat);
+    // Use Player.ts geometry (larger)
+    const outer = new THREE.Mesh(new THREE.ConeGeometry(0.55 * scale, 0.95 * scale, 32), outerMat);
     outer.scale.set(1, 1.05, 1);
     earRoot.add(outer);
-    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.38, 14), innerMat);
-    inner.position.set(0, -0.05, 0.06);
+
+    const inner = new THREE.Mesh(
+      new THREE.ConeGeometry(0.42 * scale, 0.78 * scale, 32),
+      innerMat
+    );
+    inner.position.set(0, -0.08 * scale, 0.08 * scale);
     inner.scale.set(0.82, 0.82, 0.55);
     earRoot.add(inner);
+
+    earRoot.position.set(xOffset * scale, 0.45 * scale, 0.05 * scale);
     earRoot.rotation.z = xOffset > 0 ? -0.45 : 0.45;
     earRoot.rotation.x = -0.1;
-    earRoot.castShadow = false;
+
     return earRoot;
   }
 
+  private static furTexture: THREE.CanvasTexture | null = null;
   private createFurTexture() {
+    if (Car.furTexture) return Car.furTexture;
+
     const canvas = document.createElement("canvas");
     canvas.width = 128;
     canvas.height = 128;
@@ -1069,7 +1658,70 @@ export class Car implements Updatable {
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(2.2, 2.2);
     texture.colorSpace = THREE.SRGBColorSpace;
+    Car.furTexture = texture;
     return texture;
+  }
+
+  /**
+   * Добавляет котика-водителя в кастомный шаблон (например, автобус)
+   */
+  private addDriverToTemplate(templateName: string) {
+    if (this.isParked) return;
+
+    const lowerName = templateName.toLowerCase();
+    let headPos = new THREE.Vector3(0, 1.9, 0.5); // Default for generic car
+    let chestPos = new THREE.Vector3(0, 1.45, 0.3);
+
+    // Специфичные настройки для автобуса
+    if (lowerName.includes("bus")) {
+      // Автобус высокий, водитель сидит высоко и спереди
+      headPos.set(0.6, 1.8, 2.8); // Руль обычно справа или слева, сместим чуть-чуть
+      chestPos.set(0.6, 1.4, 2.8);
+    }
+
+    const catMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf2a158,
+      roughness: 0.55,
+      metalness: 0.0,
+      sheen: 1.0,
+      sheenRoughness: 0.45,
+      sheenColor: 0xffe1cc,
+      map: this.createFurTexture()
+    });
+    const catWhiteMat = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.65, metalness: 0.05 });
+    const earInnerMat = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.45 });
+
+    const headRadius = 0.5;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 22, 18), catMat);
+    head.position.copy(headPos);
+    head.castShadow = true;
+    this.object.add(head);
+
+    const chest = new THREE.Mesh(new THREE.SphereGeometry(0.35, 18, 14), catMat);
+    chest.scale.set(1.05, 0.75, 0.95);
+    chest.position.copy(chestPos);
+    chest.castShadow = true;
+    this.object.add(chest);
+
+    this.addPlayerStyleFace(head, catWhiteMat, headRadius);
+
+    const earL = this.createPlayerStyleEar(-0.25, catMat, earInnerMat);
+    earL.position.set(headPos.x - 0.25, headPos.y + 0.4, headPos.z - 0.1);
+    this.object.add(earL);
+
+    const earR = this.createPlayerStyleEar(0.25, catMat, earInnerMat);
+    earR.position.set(headPos.x + 0.25, headPos.y + 0.4, headPos.z - 0.1);
+    this.object.add(earR);
+
+    this.driver = {
+      head,
+      chest,
+      earL,
+      earR,
+      headBaseY: head.position.y,
+      chestBaseY: chest.position.y,
+      earBaseY: earL.position.y
+    };
   }
 }
 

@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   // Увеличили территорию города, чтобы всё умещалось без наложений
-  worldSize: 260,
+  worldSize: 220,
   groundColor: "#4caf50",
   pathColor: "#edf1f6",
   waterColor: "#6dc9e8",

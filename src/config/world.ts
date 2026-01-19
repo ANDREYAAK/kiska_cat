@@ -10,22 +10,49 @@ type BuildingConfig = {
   labelAnchor?: "center" | "edgeLeft" | "edgeRight";
   labelAllSides?: boolean;
   shutters?: boolean;
+  // Для использования GLB модели вместо процедурной генерации
+  glbModelKey?: string; // Ключ модели из city.glb (например, "base_casa" или "casa")
+  glbScale?: number; // Масштаб модели (по умолчанию 1.0, модель уже нормализована в makeGlbTemplate)
+  glbRotationX?: number; // Дополнительный поворот по оси X в радианах (для исправления ориентации)
+  glbRotationZ?: number; // Дополнительный поворот по оси Z в радианах
 };
 
 export const WORLD_CONFIG = {
   roads: [
     // === Дорожная сеть: “дороги в горизонт” (длинные) + торговая улица ===
-    { position: { x: 0, z: 0 }, width: 10, length: 380, center: "dashed" }, // North-South уходит в даль
-    { position: { x: 0, z: 0 }, width: 10, length: 380, rotation: Math.PI / 2, center: "dashed" }, // East-West уходит в даль
+    { position: { x: 0, z: 0 }, width: 10, length: 380, center: "dashed" }, // North-South
+    { position: { x: 0, z: 0 }, width: 10, length: 380, rotation: Math.PI / 2, center: "dashed" }, // East-West
 
-    // Торговая улица (вдоль неё стоят банк и продукты)
-    { position: { x: 0, z: 70 }, width: 10, length: 220, rotation: Math.PI / 2, center: "dashed" },
+    // === Кольцевая дорога (Perimeter Ring) ===
+    // North Ring (z = -180)
+    { position: { x: 0, z: -180 }, width: 10, length: 380, rotation: Math.PI / 2, center: "dashed" },
+    // South Ring (z = 180)
+    { position: { x: 0, z: 180 }, width: 10, length: 380, rotation: Math.PI / 2, center: "dashed" },
+    // West Ring (x = -180)
+    { position: { x: -180, z: 0 }, width: 10, length: 380, center: "dashed" },
+    // East Ring (x = 180)
+    { position: { x: 180, z: 0 }, width: 10, length: 380, center: "dashed" },
 
-    // Подъезд к парку/пруду
-    { position: { x: -70, z: -10 }, width: 10, length: 170, center: "dashed" },
+    // Торговая улица (Extend to reach ring: x=-180 to 180)
+    // z=70. Center x=0. Length 360 to span -180..180
+    { position: { x: 0, z: 70 }, width: 10, length: 360, rotation: Math.PI / 2, center: "dashed" },
 
-    // “Европейская” улица: отдельная дорога + ряд домиков на одной стороне
-    { position: { x: 65, z: 120 }, width: 8, length: 130, rotation: Math.PI / 2, center: "none" }
+    // Подъезд к парку (Extend to South Ring at z=180? Or North Ring at z=-180?)
+    // Originally z=-10, len=170 -> -95..75.
+    // Let's extend South to North: -180 to +75? (z=-52.5, len=255)
+    // Or just extend down to South Ring?
+    // Let's make it span Park (-95) down to South Ring? Wait, -95 is North?
+    // z is negative North? "North Ring (z=-180)".
+    // Park is at -70, -10. Top z=75 (South). Bottom z=-95 (North).
+    // Extend North end to -180. Extend South end to z=70 (Trading).
+    // Let's run it from z=-180 (Ring) to z=70 (Trading).
+    // Center = (-180 + 70)/2 = -55. Length = 250.
+    { position: { x: -70, z: -55 }, width: 10, length: 250, center: "dashed" },
+
+    // “Европейская” улица (z=120).
+    // Starts x=0. Ends x=130. Extend to East Ring (x=180).
+    // x=0 to x=180. Center 90. Length 180.
+    { position: { x: 90, z: 120 }, width: 8, length: 180, rotation: Math.PI / 2, center: "none" }
   ],
   crosswalks: [] as {
     position: { x: number; z: number };
@@ -71,6 +98,26 @@ export const WORLD_CONFIG = {
       rotation: Math.PI, // дверь к торговой улице
       label: "ПРОДУКТЫ",
       shutters: true
+    },
+    // Новый дом (lowpolycity_house_01.glb) рядом с МТС БАНК
+    {
+      position: { x: -25, z: 102 },
+      size: { x: 8, y: 8, z: 8 },
+      color: "#ffffff",
+      roof: "#ffffff",
+      label: "New House",
+      glbModelKey: "house_01",
+      glbScale: 1.0,
+      rotation: Math.PI
+    },
+    {
+      position: { x: -10, z: 102 },
+      size: { x: 8, y: 8, z: 8 },
+      color: "#ffffff",
+      roof: "#ffffff",
+      label: "Classic Shop",
+      glbModelKey: "casa",
+      rotation: Math.PI
     },
     // Район у парка
     {

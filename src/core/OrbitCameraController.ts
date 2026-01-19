@@ -8,6 +8,7 @@ export class OrbitCameraController {
   private readonly offset = new THREE.Vector3(0, 2, 0);
   private readonly lastTarget = new THREE.Vector3();
   private readonly tmp = new THREE.Vector3();
+  private isFreeMode = false;
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement, target: THREE.Object3D) {
     this.camera = camera;
@@ -40,6 +41,12 @@ export class OrbitCameraController {
   }
 
   update() {
+    // В Free Mode мы не привязываемся к таргету (игроку), камера летит сама по себе
+    if (this.isFreeMode) {
+      this.controls.update();
+      return;
+    }
+
     // 1) Двигаем камеру вместе с котиком только по земле (X/Z),
     // чтобы прыжок был визуально заметен (камера не "подпрыгивает" вместе с игроком).
     this.tmp.copy(this.target.position).sub(this.lastTarget);
@@ -103,6 +110,63 @@ export class OrbitCameraController {
 
       this.camera.position.x = this.controls.target.x + newX;
       this.camera.position.z = this.controls.target.z + newZ;
+    }
+  }
+
+  /**
+   * Manually pan the camera (used for Free Mode keyboard control)
+   * Moves both camera and target
+   */
+  public panCamera(moveX: number, moveZ: number) {
+    if (!this.controls.enabled) return;
+
+    // Get forward/right vectors of camera (projected to XZ plane)
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+    // Scale movement (adjust speed as needed, e.g. 1.0)
+    const speed = 1.0;
+    const move = new THREE.Vector3()
+      .addScaledVector(right, moveX * speed)
+      .addScaledVector(forward, moveZ * speed);
+
+    this.camera.position.add(move);
+    this.controls.target.add(move);
+    this.lastTarget.copy(this.controls.target).sub(this.offset);
+    // ^ Synchronize lastTarget to prevent update() from pulling it back?
+    // Actually update() logic pulls camera TO target. 
+    // In Free Mode, update() logic step 1) follows 'this.target'. 
+    // IF we are in free mode, we probably shouldn't be following 'this.target' (player) at all in update().
+    // So we need to skip step 1 in update() if free mode is on.
+  }
+
+  public setEnabled(enabled: boolean) {
+    this.controls.enabled = enabled;
+  }
+
+  public setFreeMode(enabled: boolean) {
+    this.isFreeMode = enabled;
+    this.controls.enablePan = enabled;
+    this.controls.screenSpacePanning = enabled;
+    if (enabled) {
+      // When entering free mode, maybe relax constraints?
+      this.controls.maxDistance = 200;
+      this.controls.minDistance = 1;
+    } else {
+      // Restore game constraints
+      this.controls.maxDistance = 80;
+      this.controls.minDistance = 5;
+      this.controls.enablePan = false;
+      this.controls.screenSpacePanning = false;
+      // Immediate re-snap to target to avoid drift
+      this.lastTarget.copy(this.target.position);
+      this.controls.target.copy(this.target.position).add(this.offset);
+      // We might want to keep the current camera orientation but shift position to be relative to target?
+      // For simplicity, just letting the next 'update()' handle smooth correction or snap it here.
     }
   }
 }

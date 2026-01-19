@@ -57,4 +57,10 @@ export class Engine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(clientWidth, clientHeight);
   };
+
+  dispose() {
+    window.removeEventListener("resize", this.handleResize);
+    this.renderer.dispose();
+    this.container.removeChild(this.renderer.domElement);
+  }
 }

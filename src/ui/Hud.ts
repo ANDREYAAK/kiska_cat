@@ -18,6 +18,8 @@ export class Hud {
   private lastCanvasH = 0;
   private promoCloseHandler: (() => void) | null = null;
   private onMusicToggleHandler: (() => void) | null = null;
+  private onSaveGameHandler: (() => void | Promise<void>) | null = null;
+  private onLoadGameHandler: (() => void | Promise<void>) | null = null;
 
   constructor(container: HTMLElement) {
     this.element = document.createElement("div");
@@ -34,6 +36,8 @@ export class Hud {
       <div class="ui-buttons">
         <button class="ui-button" type="button" data-action="toggle-help">≡</button>
         <button class="ui-button" type="button" data-action="toggle-music">🎵</button>
+        <button class="ui-button" type="button" data-action="save-game" title="Сохранить (Ctrl+S)">💾</button>
+        <button class="ui-button" type="button" data-action="load-game" title="Загрузить (Ctrl+L)">📂</button>
       </div>
       <div class="ui-toast" data-role="toast" aria-live="polite" hidden></div>
       <div class="ui-modal" data-role="promo" hidden>
@@ -110,6 +114,14 @@ export class Hud {
     // Кнопка музыки
     const musicBtn = this.element.querySelector<HTMLButtonElement>('[data-action="toggle-music"]');
     musicBtn?.addEventListener("click", () => this.onMusicToggleHandler?.());
+
+    // Кнопка сохранения
+    const saveBtn = this.element.querySelector<HTMLButtonElement>('[data-action="save-game"]');
+    saveBtn?.addEventListener("click", () => this.onSaveGameHandler?.());
+
+    // Кнопка загрузки
+    const loadBtn = this.element.querySelector<HTMLButtonElement>('[data-action="load-game"]');
+    loadBtn?.addEventListener("click", () => this.onLoadGameHandler?.());
 
     // Закрытие всплывающего сообщения по клику/тапу
     this.toastEl.addEventListener("click", () => this.hideMessage());
@@ -217,6 +229,14 @@ export class Hud {
 
   onMusicToggle(handler: () => void) {
     this.onMusicToggleHandler = handler;
+  }
+
+  onSaveGame(handler: () => void | Promise<void>) {
+    this.onSaveGameHandler = handler;
+  }
+
+  onLoadGame(handler: () => void | Promise<void>) {
+    this.onLoadGameHandler = handler;
   }
 
   setMusicIcon(enabled: boolean) {
