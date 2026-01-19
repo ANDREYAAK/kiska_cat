@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { WORLD_CONFIG } from "@config/world";
 import { GAME_CONFIG } from "@config/game";
-import { BUILDING_LAYOUT } from "@entities/Building";
 import { Car } from "@entities/Car";
 
 import { localToWorldXZ, worldToLocalXZ } from "@utils/math";
@@ -274,25 +273,61 @@ export class World implements Updatable {
 
 
   private buildCrosswalks() {
-    const stripeMaterial = new THREE.MeshStandardMaterial({ color: "#f7f9fc", roughness: 0.3 });
-    WORLD_CONFIG.crosswalks?.forEach((data) => {
-      const group = new THREE.Group();
-      const stripeDepth = 0.45;
-      const gap = 0.75;
+    if (!WORLD_CONFIG.crosswalks || WORLD_CONFIG.crosswalks.length === 0) return;
+
+    // 1. Calculate total stripes
+    let totalStripes = 0;
+    const stripeDepth = 0.45;
+    const gap = 0.75;
+
+    WORLD_CONFIG.crosswalks.forEach(data => {
       const maxStripes = Math.floor(data.length / gap) + 2;
       const start = -data.length / 2 + stripeDepth / 2;
       for (let i = 0; i < maxStripes; i += 1) {
         const z = start + i * gap;
         if (z > data.length / 2) break;
-        const stripe = new THREE.Mesh(new THREE.PlaneGeometry(data.width, stripeDepth), stripeMaterial);
-        stripe.position.set(0, 0.06, z);
-        stripe.rotation.x = -Math.PI / 2;
-        group.add(stripe);
+        totalStripes++;
       }
-      group.position.set(data.position.x, 0.05, data.position.z);
-      group.rotation.y = data.rotation ?? 0;
-      this.group.add(group);
     });
+
+    if (totalStripes === 0) return;
+
+    // 2. Create InstancedMesh
+    const stripeGeo = new THREE.PlaneGeometry(1, 1);
+    const stripeMaterial = new THREE.MeshStandardMaterial({ color: "#f7f9fc", roughness: 0.3 });
+    const instancedStripes = new THREE.InstancedMesh(stripeGeo, stripeMaterial, totalStripes);
+    instancedStripes.rotation.x = -Math.PI / 2;
+    instancedStripes.position.y = 0.11; // Slightly above ground (0.05 + 0.06)
+
+    // 3. Fill matrices
+    const dummy = new THREE.Object3D();
+    const parentDummy = new THREE.Object3D();
+    let idx = 0;
+
+    WORLD_CONFIG.crosswalks.forEach(data => {
+      parentDummy.position.set(data.position.x, 0, data.position.z);
+      parentDummy.rotation.set(0, data.rotation ?? 0, 0);
+      parentDummy.updateMatrix();
+
+      const maxStripes = Math.floor(data.length / gap) + 2;
+      const start = -data.length / 2 + stripeDepth / 2;
+
+      for (let i = 0; i < maxStripes; i += 1) {
+        const z = start + i * gap;
+        if (z > data.length / 2) break;
+
+        dummy.position.set(0, 0, z); // Local to crosswalk group
+        dummy.scale.set(data.width, stripeDepth, 1);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+
+        const worldMatrix = parentDummy.matrix.clone().multiply(dummy.matrix);
+        instancedStripes.setMatrixAt(idx++, worldMatrix);
+      }
+    });
+
+    this.group.add(instancedStripes);
+    console.log(`[World] Instanced ${totalStripes} crosswalk stripes.`);
   }
 
 
@@ -404,41 +439,65 @@ export class World implements Updatable {
     spawnInPark(90);
     spawnNearBuildings();
     spawnAlongRoads();
+
+    this.finalizeTrees();
   }
 
+  private treePositions: { x: number, z: number }[] = [];
+
   private addTree(x: number, z: number) {
-    const h = this.getWorldHeight(x, z);
-    const treeGroup = new THREE.Group();
-    treeGroup.position.set(x, h, z);
-    treeGroup.userData.placeableType = "tree";
-
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.5, 2.6, 10),
-      new THREE.MeshStandardMaterial({ color: "#7a5138", roughness: 0.9 })
-    );
-    trunk.position.set(0, 1.3, 0);
-    trunk.castShadow = true;
-    treeGroup.add(trunk);
-
-    const leafColors = ["#3fbf74", "#34a96b", "#5cd18a"];
-    for (let i = 0; i < 4; i += 1) {
-      const leaves = new THREE.Mesh(
-        new THREE.SphereGeometry(1.4 - i * 0.12, 12, 12),
-        new THREE.MeshStandardMaterial({ color: leafColors[i % leafColors.length], roughness: 0.75 })
-      );
-      leaves.position.set(0, 3.2 + i * 0.5, (i % 2 === 0 ? 0.2 : -0.2));
-      leaves.castShadow = true;
-      treeGroup.add(leaves);
-    }
-
-    this.group.add(treeGroup);
-
+    this.treePositions.push({ x, z });
     this.colliders.push({
       position: { x, z },
       half: { x: 0.6, z: 0.6 },
       rotation: 0,
       type: "tree"
     });
+  }
+
+  private finalizeTrees() {
+    const count = this.treePositions.length;
+    if (count === 0) return;
+
+    const trunkGeo = new THREE.CylinderGeometry(0.35, 0.5, 2.6, 10);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: "#7a5138", roughness: 0.9 });
+    const instancedTrunk = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+    instancedTrunk.castShadow = true;
+    instancedTrunk.receiveShadow = true;
+
+    const leafColors = ["#3fbf74", "#34a96b", "#5cd18a"];
+    const leafMeshes: THREE.InstancedMesh[] = [];
+
+    for (let i = 0; i < 4; i++) {
+      const leafGeo = new THREE.SphereGeometry(1.4 - i * 0.12, 12, 12);
+      const leafMat = new THREE.MeshStandardMaterial({ color: leafColors[i % leafColors.length], roughness: 0.75 });
+      const instancedLeaf = new THREE.InstancedMesh(leafGeo, leafMat, count);
+      instancedLeaf.castShadow = true;
+      instancedLeaf.receiveShadow = true;
+      leafMeshes.push(instancedLeaf);
+    }
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < count; i++) {
+      const { x, z } = this.treePositions[i];
+      const h = this.getWorldHeight(x, z);
+
+      // Trunk
+      dummy.position.set(x, h + 1.3, z);
+      dummy.updateMatrix();
+      instancedTrunk.setMatrixAt(i, dummy.matrix);
+
+      // Leaves
+      for (let j = 0; j < 4; j++) {
+        dummy.position.set(x, h + 3.2 + j * 0.5, z + (j % 2 === 0 ? 0.2 : -0.2));
+        dummy.updateMatrix();
+        leafMeshes[j].setMatrixAt(i, dummy.matrix);
+      }
+    }
+
+    this.group.add(instancedTrunk);
+    leafMeshes.forEach(m => this.group.add(m));
+    console.log(`[World] Instanced ${count} trees (${count * 5} meshes total) into 5 draw calls.`);
   }
 
   private buildLamps() {
@@ -613,35 +672,50 @@ export class World implements Updatable {
   }
 
   private buildUmbrellas() {
-    WORLD_CONFIG.umbrellas.forEach((data) => {
+    const count = WORLD_CONFIG.umbrellas.length;
+    if (count === 0) return;
+
+    const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: "#f0f0f0" });
+    const instancedPole = new THREE.InstancedMesh(poleGeo, poleMat, count);
+    instancedPole.castShadow = true;
+
+    const topGeo = new THREE.ConeGeometry(1.6, 0.9, 12);
+    const topMat = new THREE.MeshStandardMaterial({ color: "#ffffff" }); // Base white, will be colored per instance
+    const instancedTop = new THREE.InstancedMesh(topGeo, topMat, count);
+    instancedTop.castShadow = true;
+
+    const dummy = new THREE.Object3D();
+    const colorObj = new THREE.Color();
+
+    WORLD_CONFIG.umbrellas.forEach((data, i) => {
       const h = this.getWorldHeight(data.x, data.z);
-      const group = new THREE.Group();
-      group.position.set(data.x, h, data.z);
-      group.userData.placeableType = "bush"; // Using bush as approximate type for replacement if needed
 
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8),
-        new THREE.MeshStandardMaterial({ color: "#f0f0f0" })
-      );
-      pole.position.set(0, 1.2, 0);
-      pole.castShadow = true;
+      // Pole
+      dummy.position.set(data.x, h + 1.2, data.z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      instancedPole.setMatrixAt(i, dummy.matrix);
 
-      const top = new THREE.Mesh(
-        new THREE.ConeGeometry(1.6, 0.9, 12),
-        new THREE.MeshStandardMaterial({ color: data.color })
-      );
-      top.position.set(0, 2.2, 0);
-      top.castShadow = true;
-      group.add(pole, top);
-      this.group.add(group);
+      // Top
+      dummy.position.set(data.x, h + 2.2, data.z);
+      dummy.updateMatrix();
+      instancedTop.setMatrixAt(i, dummy.matrix);
+      instancedTop.setColorAt(i, colorObj.set(data.color));
     });
+
+    this.group.add(instancedPole);
+    this.group.add(instancedTop);
+    console.log(`[World] Instanced ${count} umbrellas.`);
   }
 
   private buildBenches() {
-    // Скамейки только внутри парка (и не на дорожном полотне)
     const parks = WORLD_CONFIG.parks ?? [];
     if (parks.length === 0) return;
 
+    // First collect all valid bench positions
+    const benchPositions: { x: number, z: number, rotation: number }[] = [];
     const pick = () => parks[Math.floor(Math.random() * parks.length)];
     const waters = (WORLD_CONFIG as { waterAreas?: Array<{ position: { x: number; z: number }; width: number; depth: number }> }).waterAreas;
 
@@ -653,45 +727,76 @@ export class World implements Updatable {
       if (this.isPointOnRoad(x, z, 2.5)) continue;
       if (this.isPointInAreas(x, z, waters, 2.5)) continue;
 
-      const h = this.getWorldHeight(x, z);
       const rotation = Math.random() * Math.PI * 2;
-
-      const group = new THREE.Group();
-      group.position.set(x, h, z);
-      group.rotation.y = rotation;
-      group.userData.placeableType = "bench";
-
-      const seat = new THREE.Mesh(
-        new THREE.BoxGeometry(2.4, 0.2, 0.7),
-        new THREE.MeshStandardMaterial({ color: "#8d5b3e" })
-      );
-      seat.position.set(0, 0.6, 0);
-      seat.castShadow = true;
-
-      const back = new THREE.Mesh(
-        new THREE.BoxGeometry(2.4, 0.7, 0.15),
-        new THREE.MeshStandardMaterial({ color: "#7b4f36" })
-      );
-      back.position.set(0, 1.0, -0.25);
-      back.castShadow = true;
-
-      group.add(seat, back);
-      this.group.add(group);
+      benchPositions.push({ x, z, rotation });
     }
+
+    const count = benchPositions.length;
+    if (count === 0) return;
+
+    const seatGeo = new THREE.BoxGeometry(2.4, 0.2, 0.7);
+    const seatMat = new THREE.MeshStandardMaterial({ color: "#8d5b3e" });
+    const backGeo = new THREE.BoxGeometry(2.4, 0.7, 0.15);
+    const backMat = new THREE.MeshStandardMaterial({ color: "#7b4f36" });
+
+    const instancedSeat = new THREE.InstancedMesh(seatGeo, seatMat, count);
+    const instancedBack = new THREE.InstancedMesh(backGeo, backMat, count);
+    instancedSeat.castShadow = true;
+    instancedBack.castShadow = true;
+
+    const dummy = new THREE.Object3D();
+    const helperGroup = new THREE.Group();
+    const tempSeat = new THREE.Mesh(seatGeo);
+    const tempBack = new THREE.Mesh(backGeo);
+    tempSeat.position.set(0, 0.6, 0);
+    tempBack.position.set(0, 1.0, -0.25);
+    helperGroup.add(tempSeat, tempBack);
+
+    benchPositions.forEach((pos, i) => {
+      const h = this.getWorldHeight(pos.x, pos.z);
+
+      // Seat
+      dummy.position.set(pos.x, h, pos.z);
+      dummy.rotation.set(0, pos.rotation, 0);
+      dummy.updateMatrix();
+
+      // Transform seat matrix
+      tempSeat.updateMatrix();
+      const seatMatrix = dummy.matrix.clone().multiply(tempSeat.matrix);
+      instancedSeat.setMatrixAt(i, seatMatrix);
+
+      // Transform back matrix
+      tempBack.updateMatrix();
+      const backMatrix = dummy.matrix.clone().multiply(tempBack.matrix);
+      instancedBack.setMatrixAt(i, backMatrix);
+    });
+
+    this.group.add(instancedSeat);
+    this.group.add(instancedBack);
+    console.log(`[World] Instanced ${count} benches.`);
   }
 
   private buildRocks() {
-    WORLD_CONFIG.rocks.forEach((data) => {
+    const count = WORLD_CONFIG.rocks.length;
+    if (count === 0) return;
+
+    const rockGeo = new THREE.SphereGeometry(1, 10, 10);
+    const rockMat = new THREE.MeshStandardMaterial({ color: "#a2b1bf", roughness: 0.8 });
+    const instancedRocks = new THREE.InstancedMesh(rockGeo, rockMat, count);
+    instancedRocks.castShadow = true;
+    instancedRocks.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    WORLD_CONFIG.rocks.forEach((data, i) => {
       const h = this.getWorldHeight(data.x, data.z);
-      const rock = new THREE.Mesh(
-        new THREE.SphereGeometry(data.size, 10, 10),
-        new THREE.MeshStandardMaterial({ color: "#a2b1bf", roughness: 0.8 })
-      );
-      rock.position.set(data.x, h + data.size * 0.5, data.z);
-      rock.castShadow = true;
-      rock.userData.placeableType = "rock";
-      this.group.add(rock);
+      dummy.position.set(data.x, h + data.size * 0.5, data.z);
+      dummy.scale.setScalar(data.size);
+      dummy.updateMatrix();
+      instancedRocks.setMatrixAt(i, dummy.matrix);
     });
+
+    this.group.add(instancedRocks);
+    console.log(`[World] Instanced ${count} rocks.`);
   }
 
   resolveCollisions(pos: THREE.Vector3, radius: number) {

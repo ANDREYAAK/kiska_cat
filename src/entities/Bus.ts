@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { createLicensePlateTexture } from "@utils/textures";
 import type { Updatable } from "@core/Engine";
 import { TrafficEdge } from "../world/TrafficGraph";
 
@@ -30,20 +29,12 @@ export class Bus implements Updatable {
     private readonly y: number;
     private animTime = 0;
     private speedScale = 1;
-    private readonly isParked: boolean;
     private readonly loop: boolean;
     public finished = false;
 
     // Route support
     public routeQueue: TrafficEdge[] = [];
     public needsNewRoute = false;
-
-    private doorPivot?: THREE.Object3D;
-    private doorVoid?: THREE.Object3D;
-    private doorOpen = 0;
-    private doorOpenTarget = 0;
-    private readonly doorOpenSpeed = 5;
-    private readonly doorMaxAngle = Math.PI * 0.5;
 
     private wheels: THREE.Object3D[] = [];
     private driver?: {
@@ -60,14 +51,13 @@ export class Bus implements Updatable {
         this.speed = options.speed ?? 4;
         this.y = options.y ?? 0.22;
         this.targetIndex = Math.max(0, Math.min(path.length - 1, options.startIndex ?? 0));
-        this.isParked = !!options.parked;
         this.loop = options.loop ?? true;
 
         if (options.template) {
             this.object.add(options.template.clone(true));
             this.setupTemplateFeatures(options.template);
         } else {
-            this.object.add(this.buildSchoolBusModel(options.color ?? "#ffcc00", options.plateText));
+            this.object.add(this.buildSchoolBusModel());
         }
 
         this.object.add(this.smokeGroup);
@@ -269,7 +259,7 @@ export class Bus implements Updatable {
 
     // --- BUS BUILDING ---
 
-    private buildSchoolBusModel(color: string, plateText?: string) {
+    private buildSchoolBusModel() {
         const root = new THREE.Group();
 
         // Materials
@@ -726,7 +716,6 @@ export class Bus implements Updatable {
     }
 
     setSpeedScale(scale: number) { this.speedScale = scale; }
-    setDoorOpen(open: boolean) { this.doorOpenTarget = open ? 1 : 0; }
     setPath(path: THREE.Vector3[]) {
         this.path.length = 0;
         this.path.push(...path);

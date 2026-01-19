@@ -16,6 +16,10 @@ export class TerrainManager {
     private readonly riverWidth = 26;
     private readonly riverDepthMax = 4.0;
 
+    // Cache for optimized geometric checks
+    private roadBounds: THREE.Box2[] = [];
+    private buildingBounds: THREE.Box2[] = [];
+
     constructor() {
         this.groundTexture.repeat.set(10, 10);
         this.cloudTexture.wrapS = this.cloudTexture.wrapT = THREE.RepeatWrapping;
@@ -95,11 +99,33 @@ export class TerrainManager {
     }
 
     private isPointNearBuilding(x: number, z: number, padding: number) {
-        return WORLD_CONFIG.buildings.some((b) => {
+        const buildings = WORLD_CONFIG.buildings;
+
+        if (this.buildingBounds.length !== buildings.length) {
+            this.buildingBounds = buildings.map(b => {
+                const maxDim = Math.max(b.size.x, b.size.z) / 2;
+                return new THREE.Box2(
+                    new THREE.Vector2(b.position.x - maxDim, b.position.z - maxDim),
+                    new THREE.Vector2(b.position.x + maxDim, b.position.z + maxDim)
+                );
+            });
+        }
+
+        for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
+            const bounds = this.buildingBounds[i];
+
+            // Fast AABB check
+            if (x < bounds.min.x - padding || x > bounds.max.x + padding ||
+                z < bounds.min.y - padding || z > bounds.max.y + padding) {
+                continue;
+            }
+
             const rot = (b as { rotation?: number }).rotation ?? 0;
             const local = worldToLocalXZ(b.position.x, b.position.z, rot, x, z);
-            return Math.abs(local.x) <= b.size.x / 2 + padding && Math.abs(local.z) <= b.size.z / 2 + padding;
-        });
+            if (Math.abs(local.x) <= b.size.x / 2 + padding && Math.abs(local.z) <= b.size.z / 2 + padding) return true;
+        }
+        return false;
     }
 
     private isPointInParking(_x: number, _z: number, _padding: number) {
@@ -467,7 +493,26 @@ export class TerrainManager {
 
     private isPointOnRoad(x: number, z: number, padding = 0) {
         const roads = WORLD_CONFIG.roads ?? [];
-        for (const r of roads) {
+
+        if (this.roadBounds.length !== roads.length) {
+            this.roadBounds = roads.map(r => {
+                const maxDim = Math.max(r.width, r.length) / 2;
+                return new THREE.Box2(
+                    new THREE.Vector2(r.position.x - maxDim, r.position.z - maxDim),
+                    new THREE.Vector2(r.position.x + maxDim, r.position.z + maxDim)
+                );
+            });
+        }
+
+        for (let i = 0; i < roads.length; i++) {
+            const r = roads[i];
+            const bounds = this.roadBounds[i];
+
+            if (x < bounds.min.x - padding || x > bounds.max.x + padding ||
+                z < bounds.min.y - padding || z > bounds.max.y + padding) {
+                continue;
+            }
+
             const rot = r.rotation ?? 0;
             const local = worldToLocalXZ(r.position.x, r.position.z, rot, x, z);
             if (Math.abs(local.x) <= r.width / 2 + padding && Math.abs(local.z) <= r.length / 2 + padding) return true;

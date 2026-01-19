@@ -511,7 +511,6 @@ const createClassicShop = (options: BuildingOptions) => {
   const quoinMat = new THREE.MeshStandardMaterial({ color: "#FFFFFF" });
   const qW = 0.4;
   const qH = 0.3;
-  const qD = 0.45; // slightly more than wall corner
   for (let yQ = 0.5; yQ < totalWallH; yQ += 0.6) {
     const q = new THREE.Mesh(new THREE.BoxGeometry(qW, qH, 0.1), quoinMat);
     // Front Left Corner
@@ -1338,7 +1337,6 @@ const createCatDonalds = (options: BuildingOptions) => {
 
   // White Lines for spots (Rectangular outlines)
   const spotW = 2.5;
-  const spotDepth = 4.5;
   const numSpots = 3;
   // We want rectangular boxes for each spot.
   for (let i = 0; i < numSpots; i++) {
@@ -2335,7 +2333,6 @@ export const createBuilding = (options: BuildingOptions, textures: BuildingTextu
   const windowStep = BUILDING_LAYOUT.windows.desiredStep;
   const floorHeight = BUILDING_LAYOUT.windows.floorHeight;
   const marginX = BUILDING_LAYOUT.windows.marginX;
-  const marginTop = BUILDING_LAYOUT.windows.marginTop;
   const sillFromBase = BUILDING_LAYOUT.windows.sillFromBase;
   const doorClearance = BUILDING_LAYOUT.windows.doorClearance;
 

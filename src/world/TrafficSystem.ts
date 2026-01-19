@@ -112,9 +112,35 @@ export class TrafficSystem {
         this.buildTrafficCars();
     }
 
+    private roadBounds: THREE.Box2[] = [];
+
     private isPointOnRoad(x: number, z: number, padding = 0): boolean {
         const roads = WORLD_CONFIG.roads ?? [];
-        for (const r of roads) {
+
+        // Lazy initialization of road bounds for fast AABB check
+        if (this.roadBounds.length !== roads.length) {
+            this.roadBounds = roads.map(r => {
+                const halfW = r.width / 2;
+                const halfL = r.length / 2;
+                // Simplified bounds (not accounting for rotation perfectly, but enough for a fast reject)
+                const maxDim = Math.max(halfW, halfL);
+                return new THREE.Box2(
+                    new THREE.Vector2(r.position.x - maxDim, r.position.z - maxDim),
+                    new THREE.Vector2(r.position.x + maxDim, r.position.z + maxDim)
+                );
+            });
+        }
+
+        for (let i = 0; i < roads.length; i++) {
+            const r = roads[i];
+            const bounds = this.roadBounds[i];
+
+            // Fast AABB check first
+            if (x < bounds.min.x - padding || x > bounds.max.x + padding ||
+                z < bounds.min.y - padding || z > bounds.max.y + padding) {
+                continue;
+            }
+
             const rot = r.rotation ?? 0;
             const local = worldToLocalXZ(r.position.x, r.position.z, rot, x, z);
             if (Math.abs(local.x) <= r.width / 2 + padding && Math.abs(local.z) <= r.length / 2 + padding) return true;
@@ -163,29 +189,52 @@ export class TrafficSystem {
         }
     }
 
+    private collisionTimer = 0;
+    private readonly collisionInterval = 0.1; // Обновляем коллизии 10 раз в секунду
+    private heightUpdateTimer = 0;
+    private readonly heightUpdateInterval = 0.2; // Обновляем высоту 5 раз в секунду
+
     private updateTrafficCars(dt: number) {
+        this.collisionTimer += dt;
+        this.heightUpdateTimer += dt;
+
+        const shouldCheckCollisions = this.collisionTimer >= this.collisionInterval;
+        if (shouldCheckCollisions) this.collisionTimer = 0;
+
+        const shouldUpdateHeight = this.heightUpdateTimer >= this.heightUpdateInterval;
+        if (shouldUpdateHeight) this.heightUpdateTimer = 0;
+
         for (const car of this._trafficCars) {
-            // Dynamic height check to prevent sinking into thick roads
-            const h = this.world.getWorldHeight(car.object.position.x, car.object.position.z);
+            const pos = car.object.position;
 
-            // Check if current position is on road - if not, don't move
-            const isOnRoad = this.isPointOnRoad(car.object.position.x, car.object.position.z, 1.5);
+            // 1. Raycast for height is expensive.
+            // Update only periodically or if explicitly needed.
+            if (shouldUpdateHeight || car.object.userData.lastHeight === undefined) {
+                const h = this.world.getWorldHeight(pos.x, pos.z);
+                car.object.userData.lastHeight = h;
+            }
+            const currentH = car.object.userData.lastHeight;
 
-            if (this.checkWayBlocked(car) || !isOnRoad) {
-                car.setSpeedScale(0);
-            } else {
-                car.setSpeedScale(1);
+            // 2. Check if way is blocked
+            if (shouldCheckCollisions) {
+                const isOnRoad = this.isPointOnRoad(pos.x, pos.z, 1.5);
+                if (this.checkWayBlocked(car) || !isOnRoad) {
+                    car.setSpeedScale(0);
+                } else {
+                    car.setSpeedScale(1);
+                }
             }
 
-            // Store position before update to check if new position would be off road
-            const oldPos = car.object.position.clone();
+            // 3. Update car position
+            const oldPos = pos.clone();
+            car.update(dt, currentH);
 
-            car.update(dt, h);
-
-            // If new position is off road, revert to old position
-            const newIsOnRoad = this.isPointOnRoad(car.object.position.x, car.object.position.z, 1.5);
-            if (!newIsOnRoad) {
-                car.object.position.copy(oldPos);
+            // 4. Stay on road check
+            if (shouldCheckCollisions) {
+                const newIsOnRoad = this.isPointOnRoad(pos.x, pos.z, 1.5);
+                if (!newIsOnRoad) {
+                    pos.copy(oldPos);
+                }
             }
 
             if (car.finished) {
@@ -193,8 +242,9 @@ export class TrafficSystem {
             }
         }
 
-        // After all vehicles have moved, resolve any collisions to prevent overlapping
-        this.resolveCollisions();
+        if (shouldCheckCollisions) {
+            this.resolveCollisions();
+        }
     }
 
     private resolveCollisions() {
@@ -231,25 +281,28 @@ export class TrafficSystem {
     }
 
     private checkWayBlocked(car: Car | Bus): boolean {
-        // 1. Car-to-Car Collision - improved to prevent passing through
         const myPos = car.object.position;
         const isBus = car instanceof Bus;
-        const minDist = isBus ? 5.0 : 3.5; // Larger distance for buses
+        const minDist = isBus ? 5.0 : 3.5;
+        const minDistSq = minDist * minDist;
 
         for (const other of this._trafficCars) {
             if (other === car) continue;
-            const dist = myPos.distanceTo(other.object.position);
 
-            if (dist < minDist) {
-                // Vector to other car
-                const toOther = new THREE.Vector3().subVectors(other.object.position, myPos);
-                if (toOther.length() < 0.001) continue;
+            const dx = other.object.position.x - myPos.x;
+            const dz = other.object.position.z - myPos.z;
+            const distSq = dx * dx + dz * dz;
 
-                toOther.normalize();
+            if (distSq < minDistSq) {
+                // Vector to other car (using squared dist for fast check)
                 const myFwd = car.getForward2D();
-                const dot = toOther.x * myFwd.x + toOther.z * myFwd.z;
+                // Dot product without full normalization if possible? 
+                // We need normalize to Other for correct angle.
+                const dist = Math.sqrt(distSq);
+                if (dist < 0.001) continue;
 
-                // If other vehicle is in front (within 120 degrees cone), stop
+                const dot = (dx / dist) * myFwd.x + (dz / dist) * myFwd.z;
+
                 if (dot > 0.5) {
                     return true;
                 }
