@@ -2413,7 +2413,6 @@ export class BuildingSystem {
 
         // Для процедурных домов вычисляем позицию двери стандартным способом
         // Дверь находится на стороне +Z (в локальных координатах)
-        const width = metadata.width || 8;
         const depth = metadata.depth || 8;
         const doorLocalZ = depth / 2 + BUILDING_LAYOUT.door.localZOutset;
 

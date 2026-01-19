@@ -1,12 +1,11 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
 export class AssetLoader {
     private loader = new GLTFLoader();
     private cache: Map<string, THREE.Group> = new Map();
-    
+
     constructor() {
         // Настраиваем DRACO loader для сжатых моделей (если нужно)
         // const dracoLoader = new DRACOLoader();
@@ -22,7 +21,7 @@ export class AssetLoader {
         return new Promise((resolve, reject) => {
             // Проверяем, что URL правильный
             console.log("[AssetLoader] Loading GLTF from:", url);
-            
+
             this.loader.load(
                 url,
                 (gltf) => {
@@ -37,7 +36,7 @@ export class AssetLoader {
                         console.log(`[AssetLoader] Loading ${url}: ${percent.toFixed(1)}%`);
                     }
                 },
-                (error) => {
+                (error: any) => {
                     console.error(`[AssetLoader] ✗ Error loading ${url}:`, error);
                     console.error("[AssetLoader] Error details:", {
                         message: error.message,
